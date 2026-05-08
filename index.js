@@ -961,17 +961,26 @@ async function decodeS(data) {
         else if (register[index].size == "u32") {
             data = data>>>0;
         }
+        let rawSigned = data;
         data = data / register[index].factor;
         let corruptData = false;
         let min = Number(register[index].min);
         let max = Number(register[index].max);
-        if (min !== undefined && max !== undefined) {
+        if (rawSigned === -32768) {
+            log(config.log.enable,register[index].register+", "+register[index].titel+": sensor fault (0x8000)",config.log['error'],"CORRUPT");
+            corruptData = true;
+        }
+        if (!corruptData && min !== undefined && max !== undefined) {
             if (min !== 0 || max !== 0) {
                 if ((data > max / register[index].factor) || (data < min / register[index].factor)) {
                     nibeEmit.emit('fault',{from:"Datahantering",message:'Korrupt värde från register '+address+", Värde: "+data+register[index].unit});
                     log(config.log.enable,register[index].register+", "+register[index].titel+": "+register[index].data+" "+register[index].unit,config.log['error'],"CORRUPT");
                     corruptData = true;
                 }
+            } else if (register[index].unit === '°C' && (data < -100 || data > 350)) {
+                nibeEmit.emit('fault',{from:"Datahantering",message:'Korrupt värde från register '+address+", Värde: "+data+register[index].unit});
+                log(config.log.enable,register[index].register+", "+register[index].titel+": "+data+" out of plausible range",config.log['error'],"CORRUPT");
+                corruptData = true;
             }
         }
         if(corruptData===false) {
@@ -1092,6 +1101,7 @@ const decodeMessage = (buf) => {
             else {
                 i = i + 3;
             }
+            let rawSigned = data;
             data = data / register[index].factor;
             var map = register[index].map;
             var valueMap;
@@ -1100,20 +1110,28 @@ const decodeMessage = (buf) => {
                     var mapValue = Object.values(map[y]);
                     if (Number(Object.keys(map[y])) == data) {
                         valueMap = mapValue[0];
-                        
+
                     }
                 }
             }
             let corruptData = false;
             let min = Number(register[index].min);
             let max = Number(register[index].max);
-            if (min !== undefined && max !== undefined) {
+            if (rawSigned === -32768) {
+                log(config.log.enable,register[index].register+", "+register[index].titel+": sensor fault (0x8000)",config.log['error'],"CORRUPT");
+                corruptData = true;
+            }
+            if (!corruptData && min !== undefined && max !== undefined) {
                 if (min !== 0 || max !== 0) {
                     if ((data > max / register[index].factor) || (data < min / register[index].factor)) {
                         nibeEmit.emit('fault',{from:"Datahantering",message:'Korrupt värde från register '+address+", Värde: "+data+register[index].unit});
                         log(config.log.enable,register[index].register+", "+register[index].titel+": "+register[index].data+" "+register[index].unit,config.log['error'],"CORRUPT");
                         corruptData = true;
                     }
+                } else if (register[index].unit === '°C' && (data < -100 || data > 350)) {
+                    nibeEmit.emit('fault',{from:"Datahantering",message:'Korrupt värde från register '+address+", Värde: "+data+register[index].unit});
+                    log(config.log.enable,register[index].register+", "+register[index].titel+": "+data+" out of plausible range",config.log['error'],"CORRUPT");
+                    corruptData = true;
                 }
             }
             if(corruptData===false) {
