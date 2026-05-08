@@ -18,12 +18,20 @@ try {
     process.exit(1);
 }
 
-const series = config.connection && config.connection.series;
-if (!series) { console.error('No pump series in config.connection.series'); process.exit(1); }
-
 const models = JSON.parse(fs.readFileSync(NIBEPI_DIR + '/lib/models.json', 'utf8'));
+
+const candidates = [
+    config.connection && config.connection.series,
+    config.system && config.system.pump,
+    config.tcp && config.tcp.pump,
+];
+const series = candidates.find(s => s && models[s]);
+if (!series) {
+    console.error('Could not determine pump model from config. Tried: ' + candidates.filter(Boolean).join(', '));
+    process.exit(1);
+}
+
 const modelRelPath = models[series];
-if (!modelRelPath) { console.error('No model file found for series: ' + series); process.exit(1); }
 
 const modelFile = NIBEPI_DIR + '/lib/' + modelRelPath.replace(/^\.\//, '');
 const registers = JSON.parse(fs.readFileSync(modelFile, 'utf8'));
