@@ -120,6 +120,27 @@ sudo service nodered restart
 
 ---
 
+## Third-party patches
+
+The `patches/` folder contains fixes for `node-red-contrib-nibepi` (a dependency we don't control). Apply them once after initial setup, and re-apply if the package is ever updated:
+
+```bash
+# From Windows (PowerShell)
+scp patches/config_node.sh pi@nibepi:/tmp/config_node.sh
+
+# On the Pi
+bash /tmp/config_node.sh && sudo service nodered restart
+```
+
+### What the patches fix
+
+| File | Change |
+|---|---|
+| `config_node.js` | Demotes the spurious "Heatpump is not supported" log from `error` to `debug` — this fires for any pump that lacks the defrost feature (F730/F750 only) and is not an actual error |
+| `config_node.js` | Translates Swedish connection status messages ("Kärnan / är ansluten") to German ("Kern / ist verbunden") |
+
+---
+
 ## Credits
 
 Original project by [Fredrik Anerdin](https://github.com/anerdins/nibepi). Licensed under MIT.
