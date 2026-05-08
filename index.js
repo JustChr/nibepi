@@ -104,16 +104,16 @@ const saveGraph = (data) => {
                         fs.writeFile(path+'/graph.json', JSON.stringify(data,null,2), function(err) {
                             if(err) reject(new Error('Error saving graph to disc, write error'));
                             log(config.log.enable,"Graphs saved",config.log['info'],"Graph");
-                            nibeEmit.emit('fault',{from:"Grafer",message:'Graferna är sparade till SD-kort'});
-                            resolve('Graferna sparade till SD-kort')
+                            nibeEmit.emit('fault',{from:"Diagramme",message:'Diagramme auf SD-Karte gespeichert'});
+                            resolve('Diagramme auf SD-Karte gespeichert')
                             exec('sudo mount -o remount,ro /', function(error, stdout, stderr) {
                                 if(error) {
-                                    nibeEmit.emit('fault',{from:"Grafer",message:'Kunde inte sätta läsbart läge på filsystemet.'});
+                                    nibeEmit.emit('fault',{from:"Diagramme",message:'Dateisystem konnte nicht in schreibgeschützten Modus versetzt werden.'});
                                     
                                     reject(new Error('Error setting read-only mode after saving graph'));
                                 } else {
                                     console.log('Read only mode set.')
-                                    resolve('Graferna är sparade till SD-kort och läsbart läge aktivt')
+                                    resolve('Diagramme auf SD-Karte gespeichert, schreibgeschützter Modus aktiv')
                                 }
                             })
                             
@@ -128,8 +128,8 @@ const saveGraph = (data) => {
                     } else {
                         fs.writeFile(path+'/graph.json', JSON.stringify(data,null,2), function(err) {
                             if(err) reject(new Error('Error saving graph to disc, write error'));
-                            nibeEmit.emit('fault',{from:"Grafer",message:'Graferna är sparade till SD-kort'});
-                            resolve('Graferna sparade till SD-kort')
+                            nibeEmit.emit('fault',{from:"Diagramme",message:'Diagramme auf SD-Karte gespeichert'});
+                            resolve('Diagramme auf SD-Karte gespeichert')
                         }); 
                     }
                 });
@@ -173,10 +173,10 @@ const updateConfig = (data) => {
                             fs.writeFile(path+'/config.json', JSON.stringify(data,null,2), function(err) {
                                 if(err) return (false);
                                 log(config.log.enable,"Config file saved",config.log['info'],"Config");
-                                nibeEmit.emit('fault',{from:"Inställningar",message:'Inställningarna är sparade till SD-kort'});
+                                nibeEmit.emit('fault',{from:"Einstellungen",message:'Einstellungen auf SD-Karte gespeichert'});
                                 exec('sudo mount -o remount,ro /', function(error, stdout, stderr) {
                                     if(error) {
-                                        nibeEmit.emit('fault',{from:"Inställningar",message:'Kunde inte sätta läsbart läge på filsystemet.'});
+                                        nibeEmit.emit('fault',{from:"Einstellungen",message:'Dateisystem konnte nicht in schreibgeschützten Modus versetzt werden.'});
                                         log(config.log.enable,"Could not set read-only mode.",config.log['error'],"Config");
                                         return(false);
                                     } else {
@@ -201,7 +201,7 @@ const updateConfig = (data) => {
                                         log(config.log.enable,err,config.log['error'],"Config");
                                         return (false);
                                     }
-                                    nibeEmit.emit('fault',{from:"Inställningar",message:'Inställningarna är sparade till SD-kort'});
+                                    nibeEmit.emit('fault',{from:"Einstellungen",message:'Einstellungen auf SD-Karte gespeichert'});
                                     log(config.log.enable,"Config file saved",config.log['info'],"Config");
                                     return (true)
                                 }); 
@@ -213,7 +213,7 @@ const updateConfig = (data) => {
                                 log(config.log.enable,err,config.log['error'],"Config");
                                 return (false);
                             }
-                            nibeEmit.emit('fault',{from:"Inställningar",message:'Inställningarna är sparade till SD-kort'});
+                            nibeEmit.emit('fault',{from:"Einstellungen",message:'Einstellungen auf SD-Karte gespeichert'});
                             log(config.log.enable,"Config file saved",config.log['info'],"Config");
                             return (true)
                         }); 
@@ -673,12 +673,12 @@ function setDataValue(incoming) {
                     if(incoming.value>max) {
                         incoming.value = max
                         corruptData = true;
-                        nibeEmit.emit('fault',{from:"Skicka värde",message:'Data ('+incoming.value/item.factor+') utanför giltigt värde som får skickas.'});
+                        nibeEmit.emit('fault',{from:"Wert senden",message:'Data ('+incoming.value/item.factor+') außerhalb des gültigen Bereichs.'});
                         log(config.log.enable,'Data ('+incoming.value/item.factor+') out of range, to register '+incoming.register,config.log['error'],"Data");
                     } else if(incoming.value<min) {
                         incoming.value = min;
                         corruptData = true;
-                        nibeEmit.emit('fault',{from:"Skicka värde",message:'Data ('+incoming.value/item.factor+') utanför giltigt värde som får skickas.'});
+                        nibeEmit.emit('fault',{from:"Wert senden",message:'Data ('+incoming.value/item.factor+') außerhalb des gültigen Bereichs.'});
                         log(config.log.enable,'Data ('+incoming.value/item.factor+') out of range, to register '+incoming.register,config.log['error'],"Data");
                     }
                 }
@@ -743,12 +743,12 @@ function setDataValue(incoming) {
                 }
             }
         } else {
-            nibeEmit.emit('fault',{from:"Skicka värde",message:'Register('+incoming.register+') går ej att skriva till.'});
+            nibeEmit.emit('fault',{from:"Wert senden",message:'Register('+incoming.register+') ist nicht beschreibbar.'});
             log(config.log.enable,'Register('+incoming.register+') not allowed write access',config.log['error'],"Data");
             return -2;
         }
     } else {
-        nibeEmit.emit('fault',{from:"Skicka värde",message:'Register('+incoming.register+') finns ej i databasen.'});
+        nibeEmit.emit('fault',{from:"Wert senden",message:'Register('+incoming.register+') nicht in der Datenbank gefunden.'});
         log(config.log.enable,'Register('+incoming.register+') not in database',config.log['error'],"Data");
         return -1;
     }
@@ -973,12 +973,12 @@ async function decodeS(data) {
         if (!corruptData && min !== undefined && max !== undefined) {
             if (min !== 0 || max !== 0) {
                 if ((data > max / register[index].factor) || (data < min / register[index].factor)) {
-                    nibeEmit.emit('fault',{from:"Datahantering",message:'Korrupt värde från register '+address+", Värde: "+data+register[index].unit});
+                    nibeEmit.emit('fault',{from:"Datenverarbeitung",message:'Fehlerhafter Wert von Register '+address+", Wert: "+data+register[index].unit});
                     log(config.log.enable,register[index].register+", "+register[index].titel+": "+register[index].data+" "+register[index].unit,config.log['error'],"CORRUPT");
                     corruptData = true;
                 }
             } else if (register[index].unit === '°C' && (data < -100 || data > 350)) {
-                nibeEmit.emit('fault',{from:"Datahantering",message:'Korrupt värde från register '+address+", Värde: "+data+register[index].unit});
+                nibeEmit.emit('fault',{from:"Datenverarbeitung",message:'Fehlerhafter Wert von Register '+address+", Wert: "+data+register[index].unit});
                 log(config.log.enable,register[index].register+", "+register[index].titel+": "+data+" out of plausible range",config.log['error'],"CORRUPT");
                 corruptData = true;
             }
@@ -1124,12 +1124,12 @@ const decodeMessage = (buf) => {
             if (!corruptData && min !== undefined && max !== undefined) {
                 if (min !== 0 || max !== 0) {
                     if ((data > max / register[index].factor) || (data < min / register[index].factor)) {
-                        nibeEmit.emit('fault',{from:"Datahantering",message:'Korrupt värde från register '+address+", Värde: "+data+register[index].unit});
+                        nibeEmit.emit('fault',{from:"Datenverarbeitung",message:'Fehlerhafter Wert von Register '+address+", Wert: "+data+register[index].unit});
                         log(config.log.enable,register[index].register+", "+register[index].titel+": "+register[index].data+" "+register[index].unit,config.log['error'],"CORRUPT");
                         corruptData = true;
                     }
                 } else if (register[index].unit === '°C' && (data < -100 || data > 350)) {
-                    nibeEmit.emit('fault',{from:"Datahantering",message:'Korrupt värde från register '+address+", Värde: "+data+register[index].unit});
+                    nibeEmit.emit('fault',{from:"Datenverarbeitung",message:'Fehlerhafter Wert von Register '+address+", Wert: "+data+register[index].unit});
                     log(config.log.enable,register[index].register+", "+register[index].titel+": "+data+" out of plausible range",config.log['error'],"CORRUPT");
                     corruptData = true;
                 }
@@ -1207,17 +1207,17 @@ function startMQTT(host,port,user,pass) {
     mqtt_client = mqtt.connect('mqtt://' + mqtt_host, mqtt_Options);
     
     mqtt_client.on('connect', function () {
-        nibeEmit.emit('fault',{from:"MQTT",message:'MQTT Brokern är ansluten'});
+        nibeEmit.emit('fault',{from:"MQTT",message:'MQTT-Broker verbunden'});
         console.log("MQTT Broker is connected.")
         resolve(mqtt_client);
     });
     mqtt_client.on('close',function(){
-        nibeEmit.emit('fault',{from:"MQTT",message:'MQTT Brokern är frånkopplad'});
+        nibeEmit.emit('fault',{from:"MQTT",message:'MQTT-Broker getrennt'});
         console.log("MQTT Broker is disconnected.")
         reject(mqtt_client);
       })
       mqtt_client.on('error',function(){
-        nibeEmit.emit('fault',{from:"MQTT",message:'Kunde inte ansluta till MQTT Brokern'});
+        nibeEmit.emit('fault',{from:"MQTT",message:'Konnte nicht mit MQTT-Broker verbinden'});
         console.log("Could not connect to MQTT broker")
         reject(mqtt_client);
       })
@@ -1450,10 +1450,10 @@ const getMQTTData = (data) => {
 }
 const writeLog = (data,plugin,level) => {
     let from = "System";
-    if(plugin=="fan") from = "Automatiskt luftflöde";
-    if(plugin=="hw") from = "Varmvattenreglering";
-    if(plugin=="weather") from = "Prognosreglering";
-    if(plugin=="diagnostic") from = "Diagnostik";
+    if(plugin=="fan") from = "Automatischer Luftstrom";
+    if(plugin=="hw") from = "Warmwasserregelung";
+    if(plugin=="weather") from = "Prognoseregelung";
+    if(plugin=="diagnostic") from = "Diagnose";
     if(level=="info" || level=="error") {
         nibeEmit.emit('fault',{from:from,message:data});
     }
