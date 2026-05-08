@@ -1235,12 +1235,29 @@ async function addMQTTdiscovery(data) {
         if(i===-1 && j!==-1) {
             let result = await formatMQTTdiscovery(data)
             let topic = 'homeassistant/'+result.component+'/'+data.register+'/config'
-            let payload = {"name": "Nibe "+data.titel,"unique_id":"nibepi_"+data.register,"device_class":result.type,"unit_of_measurement":result.unit,"state_topic":result.topic,"device":{"identifiers":["nibepi"],"name":"Nibe Heat Pump","model":config.connection.series,"manufacturer":"NIBE"}};
-            if(result.command_topic !== undefined) {
+            let payload = {"name": "Nibe "+data.titel,"unique_id":"nibepi_"+data.register,"state_topic":result.topic,"device":{"identifiers":["nibepi"],"name":"Nibe Heat Pump","model":config.connection.series,"manufacturer":"NIBE"}};
+            if(result.component === "switch") {
                 payload.command_topic = result.command_topic;
-                payload.step = result.step;
-                if(result.min !== undefined) payload.min = result.min;
-                if(result.max !== undefined) payload.max = result.max;
+                payload.payload_on = "1";
+                payload.payload_off = "0";
+                payload.state_on = "1";
+                payload.state_off = "0";
+            } else if(result.component === "select") {
+                payload.command_topic = result.command_topic;
+                payload.options = result.options;
+                const fwd = Object.entries(result.stateMap).map(([k,v]) => `${k}: '${v}'`).join(', ');
+                const rev = Object.entries(result.stateMap).map(([k,v]) => `'${v}': ${k}`).join(', ');
+                payload.value_template = `{%- set m = {${fwd}} -%}{{ m.get(value|int, value) }}`;
+                payload.command_template = `{%- set m = {${rev}} -%}{{ m.get(value, value) }}`;
+            } else {
+                payload.device_class = result.type;
+                payload.unit_of_measurement = result.unit;
+                if(result.command_topic !== undefined) {
+                    payload.command_topic = result.command_topic;
+                    payload.step = result.step;
+                    if(result.min !== undefined) payload.min = result.min;
+                    if(result.max !== undefined) payload.max = result.max;
+                }
             }
             let message = JSON.stringify(payload);
             if(result.component!==undefined) {
@@ -1274,6 +1291,19 @@ async function removeMQTTdiscovery(data) {
         }));
     }
 }
+function parseStateMap(info) {
+    if (!info) return null;
+    const parts = info.split(/(?=\b\d+=)/);
+    const pairs = {};
+    for (const part of parts) {
+        const m = part.match(/^(\d+)=(.+)/);
+        if (!m) continue;
+        const num = parseInt(m[1]);
+        const label = m[2].replace(/,\s*$/, '').trim();
+        if (label && !(num in pairs)) pairs[num] = label;
+    }
+    return Object.keys(pairs).length >= 2 ? pairs : null;
+}
 function formatMQTTdiscovery(data) {
     const promise = new Promise((resolve,reject) => {
         let result = {}
@@ -1293,15 +1323,29 @@ function formatMQTTdiscovery(data) {
             result.unit = undefined;
         }
         if(data.mode === "R/W") {
-            result.component = "number";
-            result.command_topic = config.mqtt.topic+data.register+'/set';
-            let factor = Number(data.factor) || 1;
-            result.step = factor > 1 ? Math.round((1/factor)*1000)/1000 : 1;
-            let min = Number(data.min);
-            let max = Number(data.max);
-            if(min !== 0 || max !== 0) {
-                result.min = min / factor;
-                result.max = max / factor;
+            const stateMap = parseStateMap(data.info);
+            if(stateMap) {
+                const keys = Object.keys(stateMap).map(Number).sort((a,b) => a-b);
+                const isBinary = keys.length === 2 && keys[0] === 0 && keys[1] === 1;
+                result.command_topic = config.mqtt.topic+data.register+'/set';
+                if(isBinary) {
+                    result.component = "switch";
+                } else {
+                    result.component = "select";
+                    result.options = keys.map(k => stateMap[k]);
+                    result.stateMap = stateMap;
+                }
+            } else {
+                result.component = "number";
+                result.command_topic = config.mqtt.topic+data.register+'/set';
+                let factor = Number(data.factor) || 1;
+                result.step = factor > 1 ? Math.round((1/factor)*1000)/1000 : 1;
+                let min = Number(data.min);
+                let max = Number(data.max);
+                if(min !== 0 || max !== 0) {
+                    result.min = min / factor;
+                    result.max = max / factor;
+                }
             }
         }
         resolve(result)

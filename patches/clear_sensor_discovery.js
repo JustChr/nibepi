@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Clears stale HA MQTT discovery entries for R/W registers that have been
-// migrated from `sensor` to `number` entities. Run once after upgrading.
+// migrated to number/switch/select entities. Run once after upgrading.
 //
 // Usage: node clear_sensor_discovery.js
 
@@ -29,7 +29,43 @@ const modelFile = NIBEPI_DIR + '/lib/' + modelRelPath.replace(/^\.\//, '');
 const registers = JSON.parse(fs.readFileSync(modelFile, 'utf8'));
 const rwRegisters = registers.filter(r => r.mode === 'R/W');
 
-console.log(`Series: ${series} — clearing ${rwRegisters.length} stale sensor discovery topics...`);
+function parseStateMap(info) {
+    if (!info) return null;
+    const parts = info.split(/(?=\b\d+=)/);
+    const pairs = {};
+    for (const part of parts) {
+        const m = part.match(/^(\d+)=(.+)/);
+        if (!m) continue;
+        const num = parseInt(m[1]);
+        const label = m[2].replace(/,\s*$/, '').trim();
+        if (label && !(num in pairs)) pairs[num] = label;
+    }
+    return Object.keys(pairs).length >= 2 ? pairs : null;
+}
+
+function componentFor(reg) {
+    const stateMap = parseStateMap(reg.info);
+    if (stateMap) {
+        const keys = Object.keys(stateMap).map(Number).sort((a,b) => a-b);
+        return (keys.length === 2 && keys[0] === 0 && keys[1] === 1) ? 'switch' : 'select';
+    }
+    return 'number';
+}
+
+// For each R/W register, clear the old `sensor` topic and also any previously
+// published stale component topic if it differs from the current component.
+const staleComponents = ['sensor', 'number', 'switch', 'select'];
+const topics = [];
+for (const reg of rwRegisters) {
+    const current = componentFor(reg);
+    for (const comp of staleComponents) {
+        if (comp !== current) {
+            topics.push('homeassistant/' + comp + '/' + reg.register + '/config');
+        }
+    }
+}
+
+console.log(`Series: ${series} — clearing ${topics.length} stale discovery topics...`);
 
 const mqttOpts = { clean: true };
 if (config.mqtt.user) mqttOpts.username = config.mqtt.user;
@@ -38,10 +74,8 @@ if (config.mqtt.pass) mqttOpts.password = config.mqtt.pass;
 const client = mqtt.connect('mqtt://' + config.mqtt.host + ':' + config.mqtt.port, mqttOpts);
 
 client.on('connect', () => {
-    let pending = rwRegisters.length;
-    for (const reg of rwRegisters) {
-        const topic = 'homeassistant/sensor/' + reg.register + '/config';
-        // Empty retained message removes the discovery entry from HA
+    let pending = topics.length;
+    for (const topic of topics) {
         client.publish(topic, '', { retain: true }, (err) => {
             if (err) console.error('Failed: ' + topic + ' — ' + err.message);
             if (--pending === 0) {
