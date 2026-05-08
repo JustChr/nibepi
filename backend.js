@@ -102,16 +102,26 @@ process.on('message', (m) => {
         red = m.data;
     }
   });
-  process.on('disconnect', (m) => {
-      if(red===false) {
-        console.log('Graceful shutdown: keeping Modbus alive during restart...');
-        // Stay alive so the pump keeps getting ACKs and doesn't raise a communication alarm.
-        // The new backend instance will SIGTERM us once it has the port.
-        setTimeout(() => {
-            console.log('Graceful shutdown timeout, exiting.');
-            cleanExit();
-        }, 20000);
-      }
+  let zombieMode = false;
+  function enterZombieMode() {
+      if(zombieMode) return;
+      zombieMode = true;
+      console.log('Graceful shutdown: keeping Modbus alive during restart...');
+      // Stay alive so the pump keeps getting ACKs and doesn't raise a communication alarm.
+      // The new backend instance will SIGTERM us once it has the port.
+      setTimeout(() => {
+          console.log('Graceful shutdown timeout, exiting.');
+          cleanExit();
+      }, 60000);
+  }
+
+  process.on('disconnect', () => {
+      if(red===false) enterZombieMode();
+  });
+
+  // Node-RED sends SIGINT via stopCore() during shutdown — catch it to stay alive
+  process.on('SIGINT', () => {
+      if(red===false) enterZombieMode();
   });
 
   process.on('SIGTERM', () => {
@@ -137,9 +147,9 @@ function showPortClose() {
 }
 function showError(error) {
     // Port may be held by a zombie instance — retry a few times to let it release
-    if(portOpenRetries < 8) {
+    if(portOpenRetries < 25) {
         portOpenRetries++;
-        console.log(`Serial port busy, retry ${portOpenRetries}/8 in 3s...`);
+        console.log(`Serial port busy, retry ${portOpenRetries}/25 in 3s...`);
         myPort.removeAllListeners();
         setTimeout(openPort, 3000);
         return;
