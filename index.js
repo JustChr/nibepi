@@ -1217,7 +1217,7 @@ async function addMQTTdiscovery(data) {
         if(i===-1 && j!==-1) {
             let result = await formatMQTTdiscovery(data)
             let topic = 'homeassistant/'+result.component+'/'+data.register+'/config'
-            let message = JSON.stringify({"name": "Nibe "+data.titel,"device_class":result.type,"unit_of_measurement":result.unit,"state_topic":result.topic});
+            let message = JSON.stringify({"name": "Nibe "+data.titel,"unique_id":"nibepi_"+data.register,"device_class":result.type,"unit_of_measurement":result.unit,"state_topic":result.topic,"device":{"identifiers":["nibepi"],"name":"Nibe Heat Pump","model":config.connection.series,"manufacturer":"NIBE"}});
             if(result.component!==undefined) {
                 publishMQTTpromise(topic,message,true).then(result => {
                     log(config.log.enable,`Adding MQTT Discovery object, register ${data.register}`,config.log['info'],"MQTT");
@@ -1330,6 +1330,12 @@ const handleMQTT = (on,host,port,user,pass,cb) => {
                     }
                 }
                 //console.log('Incoming MQTT message:', topic, message.toString());
+            });
+            // Re-subscribe and re-publish discovery after broker restart
+            mqtt_client.on('connect', function() {
+                mqtt_client.subscribe(config.mqtt.topic + '#');
+                updateSensors();
+                mqttDiscoverySensors = [];
             });
         }
         cb(null,true);
