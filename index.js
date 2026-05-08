@@ -1295,6 +1295,7 @@ async function removeMQTTdiscovery(data) {
 }
 function parseStateMap(info) {
     if (!info) return null;
+    if (/binary encoded|bitmap|\bBit\d+=|\bb\d+:/i.test(info)) return null;
     const parts = info.split(/(?=\b\d+=)/);
     const pairs = {};
     for (const part of parts) {
