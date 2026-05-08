@@ -69,7 +69,7 @@ process.on('message', (m) => {
                 if(fs.existsSync(PID_FILE)) {
                     const oldPid = parseInt(fs.readFileSync(PID_FILE, 'utf8'));
                     if(oldPid && oldPid !== process.pid) {
-                        try { process.kill(oldPid, 'SIGTERM'); } catch(e) {}
+                        try { process.kill(oldPid, 'SIGUSR1'); } catch(e) {}
                     }
                 }
                 fs.writeFileSync(PID_FILE, process.pid.toString());
@@ -119,13 +119,19 @@ process.on('message', (m) => {
       if(red===false) enterZombieMode();
   });
 
-  // Node-RED sends SIGINT via stopCore() during shutdown — catch it to stay alive
+  // Systemd kills backend.js directly via cgroup SIGTERM during nodered restart
+  process.on('SIGTERM', () => {
+      if(red===false) enterZombieMode();
+  });
+
+  // Node-RED sends SIGINT via stopCore() during shutdown
   process.on('SIGINT', () => {
       if(red===false) enterZombieMode();
   });
 
-  process.on('SIGTERM', () => {
-      console.log('Received SIGTERM from new backend instance, exiting.');
+  // SIGUSR1 is our private signal: sent by the new backend instance when it is ready
+  process.on('SIGUSR1', () => {
+      console.log('New backend instance ready, handing over serial port.');
       cleanExit();
   });
 
