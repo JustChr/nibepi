@@ -1,86 +1,125 @@
-# nibepi
-<i>README in other languages: [English](https://github.com/anerdins/nibepi/blob/master/README.en.md)</i><br><br>
+# NibePi
 
-![alt text](https://github.com/bebben88/NibePi/blob/master/pics/nibepi-pic.jpg)
-NibePi är en IoT produkt för din Nibe värmepump.
-Med en Raspberry Pi Zero+RS485 HAT så kommunicerar NibePi med pumpen via Modbus. NibePi får plats innanför skalet på Värmepumpen och matas direkt från kretskortet i pumpen. NibePi stödjer Nibe F370,F470,F730,F750,F1145,F1245,F1155,F1255,VVM225,310,320,325,500.SMO40<br>
-Grunden i automatisering och styrning av pumpen är baserad på NodeJS och Node-RED. Det finns även möjligheter att kunna redigera fritt.<br>
+> This is a fork of [anerdins/nibepi](https://github.com/anerdins/nibepi) with the following improvements:
+> - **Graceful Modbus handover** on Node-RED restart — keeps the serial port alive as a zombie process so the heat pump does not raise a communication alarm (requires a systemd `KillMode=process` drop-in, see below)
+> - **MQTT Home Assistant discovery** with `unique_id` and device grouping so entities can be managed in the HA UI
+> - **MQTT auto-reconnect** — re-publishes discovery payloads automatically after broker restart
+> - **Invalid sensor value filtering** — suppresses NIBE `0x8000` sensor-fault sentinel and physically implausible readings
+> - **German UI** — all Node-RED dashboard and system messages translated to German
 
-En viktig aspekt i hela projektet är att det måste vara en driftsäker lösning. Sönderskrivna SD-kort bör inte kunna hända på en NibePi eftersom att systemet körs i read-only. Detta gör den väldigt driftsäker.<br>
+![NibePi](https://github.com/bebben88/NibePi/blob/master/pics/nibepi-pic.jpg)
 
-Fler funktioner kommer att byggas till och optimeras löpande. Det går även att uppdatera NibePi direkt via webinterfacet för att få tillgång till de senaste funktionerna.<br>
-I webinterfacet finns information samt möjligheter för att starta om hårdvara eller mjukvara.
+NibePi is an IoT product for your NIBE heat pump. Using a Raspberry Pi Zero W and an RS485 HAT, NibePi communicates with the pump over Modbus. It fits inside the heat pump casing and is powered directly from the pump's circuit board.
 
-<b>Hårdvara som behövs</b>
+Supported models: F370, F470, F730, F750, F1145, F1155, F1245, F1255, VVM225, VVM310, VVM320, VVM325, VVM500, SMO20, SMO40
 
-Rpi Zero W:<br>
-https://thepihut.com/products/raspberry-pi-zero-w<br>
-https://www.kiwi-electronics.nl/raspberry-pi-zero-w<br>
-https://www.electrokit.com/produkt/raspberry-pi-zero-wh/<br>
-RS485 HAT:<br>
-https://thepihut.com/products/rs485-pizero?variant=26469099976<br>
-https://www.kiwi-electronics.nl/rs-485-pi<br>
-https://www.abelectronics.co.uk/p/77/rs485-pi<br>
-https://www.m.nu/utbyggnadskort/wide-input-shim-kit<br>
-12V HAT:<br>
-https://thepihut.com/products/wide-input-shim<br>
-https://www.kiwi-electronics.nl/wide-input-shim<br>
-https://www.electrokit.com/produkt/wide-input-shim-3-16v/<br>
-SD-kort:<br>
-https://www.clasohlson.com/se/MicroSDHC-SDXC-minneskort-Klass-10,-Kingston/38-5562<br>
+The system runs Node.JS and Node-RED. The root filesystem is mounted read-only to protect the SD card from corruption — settings are only written when you explicitly save them in the UI.
 
-Löd på anslutningskontakter på A och B på RS485 kortet. Stacka sedan ihop alla kort, antingen med headers eller löd dom rätt på varandra för minsta möjliga bygghöjd.<br>
+---
 
-Ladda ner en fullständig image fil att skriva till ett 16GB SD kort.<br>
-Kolla in den officiella sidan
-https://energy.anerdins-iot.se<br>
+## Hardware
 
-På boot partionen (som även är tillgänglig i windows) ligger det en fil som heter wpa_supplicant.conf Där skriver du in dina wifi uppgifter.
+**Raspberry Pi Zero W**
+- https://thepihut.com/products/raspberry-pi-zero-w
+- https://www.kiwi-electronics.nl/raspberry-pi-zero-w
+
+**RS485 HAT**
+- https://thepihut.com/products/rs485-pizero?variant=26469099976
+- https://www.kiwi-electronics.nl/rs-485-pi
+- https://www.abelectronics.co.uk/p/77/rs485-pi
+
+**12V power HAT**
+- https://thepihut.com/products/wide-input-shim
+- https://www.kiwi-electronics.nl/wide-input-shim
+
+Solder terminals on A and B of the RS485 board, then stack all boards together as tightly as possible to minimise height.
+
+---
+
+## Installation
+
+1. Download the original image from [anerdins.se](http://anerdins.se/NibePi/nibepi_1.1.1.rar) and flash it to a 16 GB SD card.
+2. On the boot partition (visible in Windows), edit `wpa_supplicant.conf` with your WiFi credentials:
+
 ```
 ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev
 update_config=1
-country=SE
+country=DE
 
 network={
-	ssid="WIFINAMN"
-	psk="WIFILÖSEN"
-	key_mgmt=WPA-PSK
+    ssid="YOUR_WIFI"
+    psk="YOUR_PASSWORD"
+    key_mgmt=WPA-PSK
 }
 ```
-Ändra filen enligt ovan och spara.<br>
 
-```
-Installera NibePi
-Steg 1: Ta bort den övre luckan där luftfiltret sitter (Gäller endast vid frånluftspumpar).
-Steg 2: Skruva bort de två stora torx T30 skruvarna längst ner i botten på fronten.
-Steg 3: Luta ut fronten i nederkant 10-20 cm och lyft fronten uppåt (Den hänger på en skena i ovankant.
-Steg 4: Ställ undan fronten.
-Steg 5: Ta bort det lilla snäpplocket enl. bild nedan
-```
-![alt text](https://github.com/bebben88/NibePi/blob/master/pics/nibepi_1.jpg)
-```
-Steg 6: Anslut NibePi enl. bild nedan.
-Inkopplingen kan skilja sig från olika värmepumpar https://www.nibe.fi/nibedocuments/15050/031725-6.pdf 
-```
-![alt text](https://github.com/bebben88/NibePi/blob/master/pics/nibepi_2.jpg)
-```
-Steg 7: Stoppa in SD-kortet. Starta värmepumpen med fronten av så länge.
-```
-```
-Aktivera Modbus i Värmepumpen.
-Steg 1: Håll in bakåt knappen i ca 7 sekunder, en service meny kommer upp, gå in i den.
-Steg 2: Gå in i meny 5.2 Systeminställningar ( I vissa pumpar är det ytterligare ett menyval )
-Steg 3: Nästan längst ner i den menyn bockar man för "Modbus".
-Steg 4: Pumpen kan nu börja lysa rött om NibePi inte har startat ordentligt än, vilket kan ta några minuter.
+3. Remove the upper filter hatch from the heat pump (exhaust models only).
+4. Unscrew the two large Torx T30 screws at the bottom of the front panel, tilt it out and lift it off.
+5. Remove the snap-in cover inside the pump.
+
+![inside](https://github.com/bebben88/NibePi/blob/master/pics/nibepi_1.jpg)
+
+6. Connect NibePi to the 12V, A, B and GND terminals. Connections vary by model — consult your manual or [this wiring guide](https://www.nibe.fi/nibedocuments/15050/031725-6.pdf).
+
+![wiring](https://github.com/bebben88/NibePi/blob/master/pics/nibepi_2.jpg)
+
+7. Insert the SD card and start the heat pump with the front panel removed.
+
+**Enable Modbus in the heat pump:**
+1. Hold the Back button for ~7 seconds to open the service menu.
+2. Navigate to System Settings 5.2.
+3. Scroll down and enable **Modbus**.
+4. The pump may show a red alarm briefly while NibePi finishes booting.
+
+---
+
+## Accessing NibePi
+
+| Interface | URL |
+|---|---|
+| Node-RED editor | http://nibepi:1880 |
+| Dashboard (UI) | http://nibepi:1880/ui |
+
+If the hostname does not resolve, use the IP address instead (e.g. `http://192.168.1.100:1880`).
+
+---
+
+## Graceful restart setup (required for this fork)
+
+Without this step, every Node-RED restart triggers a NIBE Modbus alarm (error 251 — communication loss). This fork keeps the Modbus connection alive during restarts using a zombie process, but systemd must be told not to kill it:
+
+```bash
+sudo mount -o remount,rw /
+sudo mkdir -p /etc/systemd/system/nodered.service.d
+sudo tee /etc/systemd/system/nodered.service.d/killmode.conf << 'EOF'
+[Service]
+KillMode=process
+EOF
+sudo systemctl daemon-reload
 ```
 
+---
 
-Node-RED är nu tillgängligt på NibePi's adress. http://nibepi:1880<br>
-Webinterfacet är tillgängligt på http://nibepi:1880/ui<br>
-Om det ovanstående länkar inte fungerar så använd IP adressen istället. T.ex http://192.168.0.100:1880
+## Deploying updates
 
-Om du söker nytt elavtal får du gärna använda min affiliate länk och bli kund hos Tibber. <a href="https://invite.tibber.com/587354e8">https://invite.tibber.com/587354e8</a><br>
+Copy files to the Pi, then apply and restart:
 
-Om du uppskattar mitt arbete så kan du bjuda mig på lite kaffe på nedanstående länk.
+```bash
+# From Windows (PowerShell)
+scp backend.js pi@nibepi:/tmp/backend.js
+scp index.js pi@nibepi:/tmp/index.js
+scp flows.json pi@nibepi:/tmp/flows.json
 
-https://www.buymeacoffee.com/0oKFXbQ
+# On the Pi
+sudo mount -o remount,rw / && \
+cp /tmp/backend.js /home/pi/.node-red/node_modules/nibepi/backend.js && \
+cp /tmp/index.js /home/pi/.node-red/node_modules/nibepi/index.js && \
+cp /tmp/flows.json /home/pi/.node-red/flows.json && \
+sudo service nodered restart
+```
+
+---
+
+## Credits
+
+Original project by [Fredrik Anerdin](https://github.com/anerdins/nibepi). Licensed under MIT.
