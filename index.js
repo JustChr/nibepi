@@ -1252,7 +1252,9 @@ async function addMQTTdiscovery(data) {
             } else {
                 payload.device_class = result.type;
                 payload.unit_of_measurement = result.unit;
-                if(result.command_topic !== undefined) {
+                if(result.valueTemplate !== undefined) {
+                    payload.value_template = result.valueTemplate;
+                } else if(result.command_topic !== undefined) {
                     payload.command_topic = result.command_topic;
                     payload.step = result.step;
                     if(result.min !== undefined) payload.min = result.min;
@@ -1346,6 +1348,14 @@ function formatMQTTdiscovery(data) {
                     result.min = min / factor;
                     result.max = max / factor;
                 }
+            }
+        } else {
+            const stateMap = parseStateMap(data.info);
+            if(stateMap) {
+                const fwd = Object.entries(stateMap).map(([k,v]) => `${k}: '${v}'`).join(', ');
+                result.valueTemplate = `{%- set m = {${fwd}} -%}{{ m.get(value|int, value) }}`;
+                result.type = undefined;
+                result.unit = undefined;
             }
         }
         resolve(result)
