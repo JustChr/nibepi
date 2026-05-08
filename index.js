@@ -1235,7 +1235,14 @@ async function addMQTTdiscovery(data) {
         if(i===-1 && j!==-1) {
             let result = await formatMQTTdiscovery(data)
             let topic = 'homeassistant/'+result.component+'/'+data.register+'/config'
-            let message = JSON.stringify({"name": "Nibe "+data.titel,"unique_id":"nibepi_"+data.register,"device_class":result.type,"unit_of_measurement":result.unit,"state_topic":result.topic,"device":{"identifiers":["nibepi"],"name":"Nibe Heat Pump","model":config.connection.series,"manufacturer":"NIBE"}});
+            let payload = {"name": "Nibe "+data.titel,"unique_id":"nibepi_"+data.register,"device_class":result.type,"unit_of_measurement":result.unit,"state_topic":result.topic,"device":{"identifiers":["nibepi"],"name":"Nibe Heat Pump","model":config.connection.series,"manufacturer":"NIBE"}};
+            if(result.command_topic !== undefined) {
+                payload.command_topic = result.command_topic;
+                payload.step = result.step;
+                if(result.min !== undefined) payload.min = result.min;
+                if(result.max !== undefined) payload.max = result.max;
+            }
+            let message = JSON.stringify(payload);
             if(result.component!==undefined) {
                 publishMQTTpromise(topic,message,true).then(result => {
                     log(config.log.enable,`Adding MQTT Discovery object, register ${data.register}`,config.log['info'],"MQTT");
@@ -1284,8 +1291,18 @@ function formatMQTTdiscovery(data) {
         } else if(result.unit=="") {
             result.type = undefined;
             result.unit = undefined;
-        } else {
-            
+        }
+        if(data.mode === "R/W") {
+            result.component = "number";
+            result.command_topic = config.mqtt.topic+data.register+'/set';
+            let factor = Number(data.factor) || 1;
+            result.step = factor > 1 ? Math.round((1/factor)*1000)/1000 : 1;
+            let min = Number(data.min);
+            let max = Number(data.max);
+            if(min !== 0 || max !== 0) {
+                result.min = min / factor;
+                result.max = max / factor;
+            }
         }
         resolve(result)
     });
