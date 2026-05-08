@@ -139,6 +139,18 @@ bash /tmp/config_node.sh && sudo service nodered restart
 | `config_node.js` | Demotes the spurious "Heatpump is not supported" log from `error` to `debug` — this fires for any pump that lacks the defrost feature (F730/F750 only) and is not an actual error |
 | `config_node.js` | Translates Swedish connection status messages ("Kärnan / är ansluten") to German ("Kern / ist verbunden") |
 
+### One-time migration: clear stale HA sensor entities
+
+After upgrading to the version that exposes R/W registers as `number` entities, run this once to remove the old `sensor` discovery entries from Home Assistant:
+
+```bash
+# From Windows (PowerShell)
+scp patches/clear_sensor_discovery.js pi@nibepi:/tmp/clear_sensor_discovery.js
+
+# On the Pi (Node-RED must be running so MQTT is reachable)
+node /tmp/clear_sensor_discovery.js
+```
+
 ---
 
 ## Credits
