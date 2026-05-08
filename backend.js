@@ -69,7 +69,7 @@ process.on('message', (m) => {
                 if(fs.existsSync(PID_FILE)) {
                     const oldPid = parseInt(fs.readFileSync(PID_FILE, 'utf8'));
                     if(oldPid && oldPid !== process.pid) {
-                        try { process.kill(oldPid, 'SIGUSR1'); } catch(e) {}
+                        try { process.kill(oldPid, 'SIGUSR2'); } catch(e) {}
                     }
                 }
                 fs.writeFileSync(PID_FILE, process.pid.toString());
@@ -108,29 +108,30 @@ process.on('message', (m) => {
       zombieMode = true;
       console.log('Graceful shutdown: keeping Modbus alive during restart...');
       // Stay alive so the pump keeps getting ACKs and doesn't raise a communication alarm.
-      // The new backend instance will SIGTERM us once it has the port.
+      // The new backend instance will send SIGUSR2 once it has the port.
       setTimeout(() => {
           console.log('Graceful shutdown timeout, exiting.');
           cleanExit();
-      }, 60000);
+      }, 600000);
   }
 
   process.on('disconnect', () => {
-      if(red===false) enterZombieMode();
+      enterZombieMode();
   });
 
   // Systemd kills backend.js directly via cgroup SIGTERM during nodered restart
   process.on('SIGTERM', () => {
-      if(red===false) enterZombieMode();
+      enterZombieMode();
   });
 
   // Node-RED sends SIGINT via stopCore() during shutdown
   process.on('SIGINT', () => {
-      if(red===false) enterZombieMode();
+      enterZombieMode();
   });
 
-  // SIGUSR1 is our private signal: sent by the new backend instance when it is ready
-  process.on('SIGUSR1', () => {
+  // SIGUSR2 is our private signal: sent by the new backend instance when it is ready
+  // (SIGUSR1 is reserved by Node.js for the debugger)
+  process.on('SIGUSR2', () => {
       console.log('New backend instance ready, handing over serial port.');
       cleanExit();
   });
