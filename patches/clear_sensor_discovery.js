@@ -33,7 +33,7 @@ if (!series) {
 
 const modelRelPath = models[series];
 
-const modelFile = NIBEPI_DIR + '/lib/' + modelRelPath.replace(/^\.\//, '');
+const modelFile = NIBEPI_DIR + '/' + modelRelPath.replace(/^\.\//, '');
 const registers = JSON.parse(fs.readFileSync(modelFile, 'utf8'));
 const rwRegisters = registers.filter(r => r.mode === 'R/W');
 
