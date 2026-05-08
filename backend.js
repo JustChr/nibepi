@@ -31,6 +31,7 @@ exec(`sudo chrt -a -f -p 99 ${process.pid}`, function(error, stdout, stderr) {
 
 });*/
 const serialport = require('serialport');
+const fs = require('fs');
 const nack = [0x15];
 const ack = [0x06];
 var myPort;
@@ -47,15 +48,33 @@ var rmu_start = false;
 let other_start = false;
 var startReset = true;
 let checkACK = {};
+var portName;
+var portOpenRetries = 0;
+const PID_FILE = '/tmp/nibepi_backend.pid';
+
+function openPort() {
+    myPort = new serialport(portName, 9600);
+    myPort.on('open', showPortOpen);
+    myPort.on('data', analyzeData);
+    myPort.on('close', showPortClose);
+    myPort.on('error', showError);
+}
+
 process.on('message', (m) => {
     if(m.start===true) {
         if(m.port!==undefined) {
             portName = m.port;
-            myPort = new serialport(portName, 9600);
-            myPort.on('open', showPortOpen);
-            myPort.on('data', analyzeData);
-            myPort.on('close', showPortClose);
-            myPort.on('error', showError);
+            // Kill any zombie instance still holding the serial port
+            try {
+                if(fs.existsSync(PID_FILE)) {
+                    const oldPid = parseInt(fs.readFileSync(PID_FILE, 'utf8'));
+                    if(oldPid && oldPid !== process.pid) {
+                        try { process.kill(oldPid, 'SIGTERM'); } catch(e) {}
+                    }
+                }
+                fs.writeFileSync(PID_FILE, process.pid.toString());
+            } catch(e) {}
+            openPort();
         } else {
             if(process.connected===true) {
                 process.send({type:"log",data:'Error starting backend, no serial port specified',level:"error",kind:"Serialport"});
@@ -85,11 +104,29 @@ process.on('message', (m) => {
   });
   process.on('disconnect', (m) => {
       if(red===false) {
-        console.log('Shutting down the core.')
-        process.exit(99);
+        console.log('Graceful shutdown: keeping Modbus alive during restart...');
+        // Stay alive so the pump keeps getting ACKs and doesn't raise a communication alarm.
+        // The new backend instance will SIGTERM us once it has the port.
+        setTimeout(() => {
+            console.log('Graceful shutdown timeout, exiting.');
+            cleanExit();
+        }, 20000);
       }
-    
   });
+
+  process.on('SIGTERM', () => {
+      console.log('Received SIGTERM from new backend instance, exiting.');
+      cleanExit();
+  });
+
+  function cleanExit() {
+      try { fs.unlinkSync(PID_FILE); } catch(e) {}
+      if(myPort && myPort.isOpen) {
+          myPort.close(() => process.exit(99));
+      } else {
+          process.exit(99);
+      }
+  }
 
 
 function showPortOpen() {
@@ -99,6 +136,14 @@ function showPortClose() {
     console.log('Port closed. Data rate: ' + myPort.baudRate);
 }
 function showError(error) {
+    // Port may be held by a zombie instance — retry a few times to let it release
+    if(portOpenRetries < 8) {
+        portOpenRetries++;
+        console.log(`Serial port busy, retry ${portOpenRetries}/8 in 3s...`);
+        myPort.removeAllListeners();
+        setTimeout(openPort, 3000);
+        return;
+    }
     if(process.connected===true) {
         process.send({type:"fault",data:{from:"core",message:"The core could not be started, check the serialport"}});
     }
