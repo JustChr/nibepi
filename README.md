@@ -95,119 +95,63 @@ network={
 
 Eject the card, insert it into the Pi and power it on.
 
-### 3. Find the Pi on your network
+### 3. Run the setup script
 
-The hostname is `nibepi`. Try `ping nibepi` from your PC. If DNS doesn't resolve it, log in to your router to find its IP address.
-
-SSH credentials: `pi` / `nibe`
+SSH into the Pi (password: `nibe`) and run one command:
 
 ```bash
 ssh pi@nibepi
+bash <(wget -qO- https://raw.githubusercontent.com/JustChr/nibepi/master/setup.sh)
 ```
 
-### 4. Expand the filesystem
+The script handles everything automatically:
+- Expands the filesystem to the full card
+- Installs Node.js 18 for ARMv6l
+- Downloads the latest NibePi from GitHub
+- Installs npm dependencies (compiles serialport, ~6 min)
+- Installs the systemd service
+- Applies hardening (tmpfs, watchdog, read-only root on startup)
+- Reboots
 
-The image only uses ~3 GB of the card. Expand it to use the full card:
+Total time: ~10 minutes, no further input required.
 
-```bash
-sudo mount -o remount,rw /
-sudo parted /dev/mmcblk0 resizepart 2 100%
-sudo resize2fs /dev/mmcblk0p2
-sudo mount -o remount,ro /
-```
-
-### 5. Install Node.js 18
-
-The image ships with Node.js v10 which is too old. The Pi Zero W uses ARMv6l — use the unofficial builds:
-
-```bash
-sudo mount -o remount,rw /
-
-# Download and install Node.js 18 for ARMv6l
-wget https://unofficial-builds.nodejs.org/download/release/v18.20.8/node-v18.20.8-linux-armv6l.tar.xz
-tar -xf node-v18.20.8-linux-armv6l.tar.xz
-sudo cp -r node-v18.20.8-linux-armv6l/bin/* /usr/local/bin/
-sudo cp -r node-v18.20.8-linux-armv6l/lib/* /usr/local/lib/
-rm -rf node-v18.20.8-linux-armv6l*
-
-node --version   # should print v18.20.8
-```
-
-### 6. Add swap (required for npm install)
-
-The Pi Zero W has 512 MB RAM. Compiling the serialport native addon requires extra memory:
-
-```bash
-sudo mount -o remount,rw /
-sudo fallocate -l 512M /swapfile
-sudo chmod 600 /swapfile
-sudo mkswap /swapfile
-sudo swapon /swapfile
-```
-
-> After the install is complete you can remove it: `sudo swapoff /swapfile && sudo rm /swapfile`
-
----
-
-## Installation
-
-### 1. Copy files to the Pi
-
-From Windows (PowerShell):
-
-```powershell
-scp bridge.js              pi@nibepi:/tmp/bridge.js
-scp backend.js             pi@nibepi:/tmp/backend.js
-scp package.json           pi@nibepi:/tmp/package.json
-scp -r ui                  pi@nibepi:/tmp/ui
-scp -r lib                 pi@nibepi:/tmp/lib
-scp -r models              pi@nibepi:/tmp/models
-scp patches/bridge.service pi@nibepi:/tmp/bridge.service
-```
-
-### 2. Install on the Pi
-
-```bash
-sudo mount -o remount,rw /
-
-# Create install directory
-sudo mkdir -p /opt/nibepi
-sudo chown pi:pi /opt/nibepi
-
-# Copy files
-cp  /tmp/bridge.js    /opt/nibepi/bridge.js
-cp  /tmp/backend.js   /opt/nibepi/backend.js
-cp  /tmp/package.json /opt/nibepi/package.json
-cp -r /tmp/ui         /opt/nibepi/ui
-cp -r /tmp/lib        /opt/nibepi/lib
-cp -r /tmp/models     /opt/nibepi/models
-
-# Install npm dependencies (~6 minutes on Pi Zero W)
-cd /opt/nibepi && npm install
-
-# Install config directory
-sudo mkdir -p /etc/nibepi
-sudo chown pi:pi /etc/nibepi
-
-# Install systemd service
-sudo cp /tmp/bridge.service /etc/systemd/system/bridge.service
-sudo systemctl daemon-reload
-sudo systemctl enable bridge
-sudo systemctl start bridge
-```
-
-### 3. Enable Modbus on the pump
+### 4. Enable Modbus on the pump
 
 1. Hold the **Back** button for ~7 seconds to open the service menu.
 2. Navigate to **System Settings 5.2**.
 3. Scroll down and enable **Modbus**.
 4. The pump may show a brief red alarm while NibePi finishes booting — this is normal.
 
-### 4. Open the config UI
+### 5. Open the config UI
 
 ```
 http://nibepi:1880
 ```
+
+---
+
+## Hardening the Pi
+
+Hardening is applied automatically by `setup.sh`. To re-apply manually:
+
+```bash
+sudo mount -o remount,rw /
+bash <(wget -qO- https://raw.githubusercontent.com/JustChr/nibepi/master/patches/harden.sh)
+sudo reboot
+```
+
+### What it does
+
+| Change | Why |
+|---|---|
+| Root filesystem `ro` in fstab | Boots read-only every time — the single biggest protection for the SD card |
+| `/tmp` and `/var/log` → tmpfs (RAM) | Eliminates the most common sources of runtime SD writes |
+| Hardware watchdog enabled (`dtparam=watchdog=on`) | Pi reboots automatically if the kernel hangs or freezes |
+| systemd watchdog timers (15 s / 2 min) | systemd kicks the watchdog; if it stops, the hardware watchdog fires |
+| Bluetooth disabled (`dtoverlay=disable-bt`) | Unused on this device; frees a CPU core and reduces background activity |
+| Bridge service restart limits | After 5 crashes within 2 minutes, triggers a full reboot instead of looping |
+
+bridge.js remounts rw temporarily only when saving config, then returns to ro immediately after.
 
 ---
 
