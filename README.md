@@ -2,6 +2,8 @@
 
 A standalone bridge that connects a NIBE heat pump to Home Assistant via MQTT. Runs on a Raspberry Pi Zero W fitted with an RS485 HAT inside the heat pump casing. No Node-RED, no cloud — ~150 MB less RAM used compared to the original project.
 
+![NibePi](pics/nibepi-pic.jpg)
+
 > Fork of [anerdins/nibepi](https://github.com/anerdins/nibepi). Licensed under MIT.
 
 ---
@@ -44,9 +46,17 @@ VVM225, VVM310, VVM320, VVM325, VVM500, SMO20, SMO40, RMU40 (S1–S4), S1255
 
 Solder screw terminals on the A and B pads of the RS485 HAT. Stack the boards: Pi Zero W → 12V HAT → RS485 HAT, as flat as possible to fit inside the pump casing.
 
-### Wiring inside the pump
+### Installing inside the pump
 
-Connect NibePi to the pump's terminal block — exact positions vary by model, consult your manual or [this NIBE wiring guide](https://www.nibe.fi/nibedocuments/15050/031725-6.pdf).
+1. Remove the upper filter hatch (exhaust models only).
+2. Unscrew the two large Torx T30 screws at the bottom of the front panel, tilt it out and lift it off.
+3. Remove the snap-in cover inside the pump.
+
+![Inside the pump](pics/nibepi_1.jpg)
+
+4. Connect NibePi to the 12V, A, B and GND terminals. Connections vary by model — consult your manual or [this NIBE wiring guide](https://www.nibe.fi/nibedocuments/15050/031725-6.pdf).
+
+![Wiring](pics/nibepi_2.jpg)
 
 | NibePi terminal | Pump terminal |
 |---|---|
@@ -54,6 +64,8 @@ Connect NibePi to the pump's terminal block — exact positions vary by model, c
 | GND | GND |
 | A | RS485 A |
 | B | RS485 B |
+
+5. Insert the SD card and power on the pump with the front panel removed.
 
 ---
 
