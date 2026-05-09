@@ -1,0 +1,675 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NibePi</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:       #0f1117;
+    --surface:  #1a1d26;
+    --border:   #2e3245;
+    --text:     #e2e6f0;
+    --muted:    #7a8099;
+    --accent:   #4f8ef7;
+    --green:    #3ecf8e;
+    --red:      #f75f5f;
+    --yellow:   #f7c948;
+    --radius:   8px;
+    --font:     'Segoe UI', system-ui, sans-serif;
+  }
+
+  body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; min-height: 100vh; }
+
+  /* ── Header ── */
+  header {
+    display: flex; align-items: center; gap: 12px;
+    padding: 14px 24px; background: var(--surface); border-bottom: 1px solid var(--border);
+  }
+  header h1 { font-size: 18px; font-weight: 600; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 3px 10px; border-radius: 20px; font-size: 12px;
+    background: var(--border); color: var(--muted);
+  }
+  .badge.ok    { background: #1a3326; color: var(--green); }
+  .badge.err   { background: #2d1a1a; color: var(--red); }
+  .badge.warn  { background: #2d2510; color: var(--yellow); }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+
+  /* ── Tabs ── */
+  nav { display: flex; gap: 2px; padding: 0 24px; background: var(--surface); border-bottom: 1px solid var(--border); }
+  nav button {
+    padding: 10px 18px; background: none; border: none; border-bottom: 2px solid transparent;
+    color: var(--muted); cursor: pointer; font-size: 14px; font-family: var(--font); transition: color .15s;
+  }
+  nav button:hover  { color: var(--text); }
+  nav button.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  /* ── Main ── */
+  main { padding: 24px; max-width: 900px; }
+  .tab { display: none; }
+  .tab.active { display: block; }
+
+  /* ── Cards / groups ── */
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; margin-bottom: 16px; }
+  .card h2 { font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 16px; }
+
+  /* ── Form ── */
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 20px; }
+  .form-group { display: flex; flex-direction: column; gap: 5px; }
+  .form-group.full { grid-column: 1 / -1; }
+  label { font-size: 12px; color: var(--muted); }
+  input[type=text], input[type=password], input[type=number], select {
+    background: var(--bg); border: 1px solid var(--border); border-radius: 5px;
+    color: var(--text); padding: 7px 10px; font-size: 14px; font-family: var(--font);
+    transition: border-color .15s;
+  }
+  input:focus, select:focus { outline: none; border-color: var(--accent); }
+  .toggle-row { display: flex; align-items: center; gap: 10px; padding: 4px 0; }
+  .toggle-row label { color: var(--text); font-size: 14px; }
+
+  /* Toggle switch */
+  .switch { position: relative; display: inline-block; width: 36px; height: 20px; flex-shrink: 0; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .slider {
+    position: absolute; inset: 0; background: var(--border); border-radius: 20px; cursor: pointer; transition: .2s;
+  }
+  .slider::before {
+    content: ''; position: absolute; width: 14px; height: 14px; left: 3px; top: 3px;
+    background: white; border-radius: 50%; transition: .2s;
+  }
+  input:checked + .slider { background: var(--accent); }
+  input:checked + .slider::before { transform: translateX(16px); }
+
+  /* ── Buttons ── */
+  .btn {
+    padding: 8px 18px; border: none; border-radius: 5px; cursor: pointer;
+    font-size: 14px; font-family: var(--font); font-weight: 500; transition: opacity .15s;
+  }
+  .btn:hover { opacity: .85; }
+  .btn-primary  { background: var(--accent); color: white; }
+  .btn-success  { background: var(--green);  color: #0a2018; }
+  .btn-danger   { background: var(--red);    color: white; }
+  .btn-ghost    { background: var(--border); color: var(--text); }
+  .btn:disabled { opacity: .4; cursor: not-allowed; }
+  .btn-row { display: flex; gap: 10px; margin-top: 16px; }
+
+  /* ── Status grid ── */
+  .status-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
+  .stat-card {
+    background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 14px 16px;
+  }
+  .stat-card .label { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+  .stat-card .value { font-size: 18px; font-weight: 600; }
+  .stat-card .value.green { color: var(--green); }
+  .stat-card .value.red   { color: var(--red); }
+  .stat-card .value.muted { color: var(--muted); font-size: 14px; }
+
+  /* ── Register table ── */
+  .search-row { display: flex; gap: 10px; margin-bottom: 14px; align-items: center; }
+  .search-row input { flex: 1; }
+  .filter-row { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+  .filter-btn {
+    padding: 4px 12px; border: 1px solid var(--border); border-radius: 20px;
+    background: none; color: var(--muted); cursor: pointer; font-size: 12px; transition: all .15s;
+  }
+  .filter-btn.active { background: var(--accent); border-color: var(--accent); color: white; }
+  .tbl-wrap { overflow-x: auto; max-height: 520px; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius); }
+  table { width: 100%; border-collapse: collapse; }
+  th {
+    position: sticky; top: 0; background: var(--surface); text-align: left;
+    padding: 9px 12px; font-size: 12px; color: var(--muted); font-weight: 600;
+    border-bottom: 1px solid var(--border); white-space: nowrap; z-index: 1;
+  }
+  td { padding: 7px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: rgba(255,255,255,.025); }
+  .tag {
+    display: inline-block; padding: 1px 7px; border-radius: 3px; font-size: 11px; font-weight: 600;
+  }
+  .tag-rw { background: #1a2d3a; color: var(--accent); }
+  .tag-r  { background: #1e2030; color: var(--muted); }
+  .live-val { font-family: monospace; color: var(--green); font-size: 13px; }
+  .live-val.stale { color: var(--muted); }
+  .reg-num { font-family: monospace; font-size: 12px; color: var(--muted); }
+
+  /* ── Log viewer ── */
+  #log-view {
+    background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius);
+    height: 380px; overflow-y: auto; padding: 12px; font-family: monospace; font-size: 12px;
+    line-height: 1.5;
+  }
+  .log-line { color: var(--muted); white-space: pre-wrap; word-break: break-all; }
+  .log-line.ERROR { color: var(--red); }
+  .log-line.WARN  { color: var(--yellow); }
+  .log-line.INFO  { color: var(--text); }
+  .log-line.DEBUG { color: #5a6080; }
+
+  .fs-badge {
+    display: inline-flex; align-items: center; gap: 6px; padding: 5px 14px;
+    border-radius: 5px; font-weight: 600; font-size: 13px;
+  }
+  .fs-badge.ro { background: #2d1a1a; color: var(--red); }
+  .fs-badge.rw { background: #1a3326; color: var(--green); }
+
+  .inline-note { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .section-sep { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
+  .spin { display: inline-block; animation: spin .6s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>NibePi</h1>
+  <span id="hdr-pump"  class="badge"><span class="dot"></span>Pumpe</span>
+  <span id="hdr-mqtt"  class="badge"><span class="dot"></span>MQTT</span>
+  <span id="hdr-model" class="badge" style="display:none"></span>
+</header>
+
+<nav>
+  <button class="active" data-tab="tab-connection">Verbindung</button>
+  <button data-tab="tab-mqtt">MQTT</button>
+  <button data-tab="tab-registers">Register</button>
+  <button data-tab="tab-status">Status &amp; System</button>
+</nav>
+
+<main>
+
+<!-- ── Connection tab ── -->
+<div id="tab-connection" class="tab active">
+  <div class="card">
+    <h2>Serielle Verbindung</h2>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Serieller Port</label>
+        <input type="text" id="serial-port" placeholder="/dev/ttyAMA0">
+      </div>
+      <div class="form-group">
+        <label>Pumpenmodell</label>
+        <select id="pump-model"></select>
+      </div>
+    </div>
+  </div>
+  <div class="btn-row">
+    <button class="btn btn-primary" id="btn-save-conn">Speichern</button>
+  </div>
+</div>
+
+<!-- ── MQTT tab ── -->
+<div id="tab-mqtt" class="tab">
+  <div class="card">
+    <h2>MQTT-Broker</h2>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Host</label>
+        <input type="text" id="mqtt-host" placeholder="192.168.1.x">
+      </div>
+      <div class="form-group">
+        <label>Port</label>
+        <input type="number" id="mqtt-port" placeholder="1883">
+      </div>
+      <div class="form-group">
+        <label>Benutzername</label>
+        <input type="text" id="mqtt-user" autocomplete="off">
+      </div>
+      <div class="form-group">
+        <label>Passwort</label>
+        <input type="password" id="mqtt-pass" autocomplete="off">
+      </div>
+      <div class="form-group full">
+        <label>Topic-Präfix</label>
+        <input type="text" id="mqtt-topic" placeholder="nibe/modbus/">
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <h2>Home Assistant Discovery</h2>
+    <div class="toggle-row">
+      <label class="switch">
+        <input type="checkbox" id="mqtt-enable">
+        <span class="slider"></span>
+      </label>
+      <label for="mqtt-enable">MQTT aktivieren</label>
+    </div>
+    <div class="toggle-row" style="margin-top:10px">
+      <label class="switch">
+        <input type="checkbox" id="mqtt-discovery">
+        <span class="slider"></span>
+      </label>
+      <label for="mqtt-discovery">HA MQTT Discovery aktivieren</label>
+    </div>
+  </div>
+  <div class="btn-row">
+    <button class="btn btn-primary" id="btn-save-mqtt">Speichern</button>
+  </div>
+</div>
+
+<!-- ── Registers tab ── -->
+<div id="tab-registers" class="tab">
+  <div class="search-row">
+    <input type="text" id="reg-search" placeholder="Register-Nr. oder Name suchen…">
+    <button class="btn btn-ghost" id="btn-reg-refresh">↻ Aktualisieren</button>
+  </div>
+  <div class="filter-row">
+    <button class="filter-btn active" data-filter="all">Alle</button>
+    <button class="filter-btn" data-filter="active">Aktiv</button>
+    <button class="filter-btn" data-filter="rw">R/W</button>
+  </div>
+  <div class="tbl-wrap">
+    <table id="reg-table">
+      <thead>
+        <tr>
+          <th>Register</th>
+          <th>Name</th>
+          <th>Einheit</th>
+          <th>Modus</th>
+          <th>Wert</th>
+          <th>Aktiv</th>
+        </tr>
+      </thead>
+      <tbody id="reg-tbody"></tbody>
+    </table>
+  </div>
+  <p class="inline-note" id="reg-count"></p>
+</div>
+
+<!-- ── Status & System tab ── -->
+<div id="tab-status" class="tab">
+
+  <div class="card">
+    <h2>Systemstatus</h2>
+    <div class="status-grid">
+      <div class="stat-card">
+        <div class="label">Pumpe</div>
+        <div class="value" id="st-pump">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Firmware</div>
+        <div class="value muted" id="st-fw">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">MQTT</div>
+        <div class="value" id="st-mqtt">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Dateisystem</div>
+        <div class="value" id="st-fs">—</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Dateisystem</h2>
+    <p style="color:var(--muted);font-size:13px;margin-bottom:14px">
+      Das Root-Dateisystem ist im Nur-Lesen-Modus (SD-Kartenschutz).
+      Vor dem Speichern von Einstellungen wird es automatisch kurz beschreibbar gemacht.
+    </p>
+    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+      <span id="fs-status" class="fs-badge ro">— unbekannt</span>
+      <button class="btn btn-ghost" id="btn-fs-rw">Beschreibbar machen</button>
+      <button class="btn btn-ghost" id="btn-fs-ro">Schreibschutz aktivieren</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Logging</h2>
+    <div class="toggle-row">
+      <label class="switch">
+        <input type="checkbox" id="log-enable">
+        <span class="slider"></span>
+      </label>
+      <label for="log-enable">Logging aktivieren</label>
+    </div>
+    <div class="toggle-row" style="margin-top:10px">
+      <label class="switch">
+        <input type="checkbox" id="log-debug">
+        <span class="slider"></span>
+      </label>
+      <label for="log-debug">Debug-Modus (viele Ausgaben!)</label>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-ghost btn-sm" id="btn-save-log">Speichern</button>
+      <button class="btn btn-ghost btn-sm" id="btn-log-clear">Log leeren</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Live-Log</h2>
+    <div id="log-view"></div>
+  </div>
+
+  <hr class="section-sep">
+
+  <div class="card">
+    <h2>Dienst neu starten</h2>
+    <p style="color:var(--muted);font-size:13px;margin-bottom:14px">
+      Startet den NibePi-Bridge-Dienst neu. Die Verbindung zur Pumpe bleibt dank Zombie-Modus kurz erhalten.
+    </p>
+    <button class="btn btn-danger" id="btn-restart">Bridge neu starten</button>
+  </div>
+
+</div>
+</main>
+
+<script>
+// ── Utilities ─────────────────────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+const qs = sel => document.querySelector(sel);
+
+async function api(method, path, body) {
+  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  if (body !== undefined) opts.body = JSON.stringify(body);
+  const r = await fetch('/api' + path, opts);
+  return r.json();
+}
+
+// ── Tab navigation ────────────────────────────────────────────────────────────
+document.querySelectorAll('nav button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    btn.classList.add('active');
+    $(btn.dataset.tab).classList.add('active');
+    if (btn.dataset.tab === 'tab-registers' && !registersLoaded) loadRegisters();
+    if (btn.dataset.tab === 'tab-status') loadFsStatus();
+  });
+});
+
+// ── SSE: status + values ──────────────────────────────────────────────────────
+const liveValues = {};  // register → { value, ts }
+
+function openEvents() {
+  const es = new EventSource('/api/events');
+  es.addEventListener('status', e => applyStatus(JSON.parse(e.data)));
+  es.addEventListener('value',  e => {
+    const d = JSON.parse(e.data);
+    liveValues[d.register] = { value: d.value, unit: d.unit, ts: Date.now() };
+    updateTableCell(d.register, d.value, d.unit);
+  });
+  es.addEventListener('fault', e => {
+    const d = JSON.parse(e.data);
+    addLogLine(`[FAULT] ${d.from}: ${d.message}`, 'WARN');
+  });
+  es.onerror = () => setTimeout(openEvents, 3000);
+}
+
+// ── SSE: logs ─────────────────────────────────────────────────────────────────
+function openLogs() {
+  const es = new EventSource('/api/logs');
+  es.addEventListener('log', e => addLogLine(JSON.parse(e.data)));
+  es.onerror = () => setTimeout(openLogs, 3000);
+}
+
+function addLogLine(line, forceLevel) {
+  const el = document.createElement('div');
+  el.className = 'log-line';
+  const m = line.match(/\[(ERROR|WARN |INFO |DEBUG)\]/);
+  const lvl = forceLevel || (m && m[1].trim()) || '';
+  el.classList.add(lvl);
+  el.textContent = line;
+  const view = $('log-view');
+  view.appendChild(el);
+  const atBottom = view.scrollHeight - view.clientHeight - view.scrollTop < 60;
+  if (atBottom) view.scrollTop = view.scrollHeight;
+  // Keep last 500 lines
+  while (view.children.length > 500) view.removeChild(view.firstChild);
+}
+
+// ── Status application ────────────────────────────────────────────────────────
+function applyStatus(s) {
+  // Header badges
+  const pump = $('hdr-pump');
+  pump.className = 'badge ' + (s.connected ? 'ok' : 'err');
+  pump.innerHTML = `<span class="dot"></span>${s.connected ? 'Pumpe verbunden' : 'Pumpe getrennt'}`;
+
+  const mqtt = $('hdr-mqtt');
+  mqtt.className = 'badge ' + (s.mqttConnected ? 'ok' : 'err');
+  mqtt.innerHTML = `<span class="dot"></span>${s.mqttConnected ? 'MQTT verbunden' : 'MQTT getrennt'}`;
+
+  const mdl = $('hdr-model');
+  if (s.model) { mdl.style.display = ''; mdl.textContent = s.model; }
+
+  // Status tab cards
+  $('st-pump').textContent  = s.connected ? (s.model || 'verbunden') : 'getrennt';
+  $('st-pump').className    = 'value ' + (s.connected ? 'green' : 'red');
+  $('st-fw').textContent    = s.firmware || '—';
+  $('st-mqtt').textContent  = s.mqttConnected ? 'verbunden' : 'getrennt';
+  $('st-mqtt').className    = 'value ' + (s.mqttConnected ? 'green' : 'red');
+
+  const fsEl = $('st-fs');
+  fsEl.textContent  = s.readonly ? 'Schreibgeschützt' : 'Beschreibbar';
+  fsEl.className    = 'value ' + (s.readonly ? 'muted' : 'green');
+}
+
+// ── Config load ───────────────────────────────────────────────────────────────
+async function loadConfig() {
+  const c = await api('GET', '/config');
+  // Connection tab
+  $('serial-port').value = c.serial && c.serial.port || '/dev/ttyAMA0';
+  await loadModelList(c.system && c.system.pump);
+  // MQTT tab
+  const m = c.mqtt || {};
+  $('mqtt-host').value       = m.host      || '';
+  $('mqtt-port').value       = m.port      || '1883';
+  $('mqtt-user').value       = m.user      || '';
+  $('mqtt-pass').value       = m.pass      || '';
+  $('mqtt-topic').value      = m.topic     || 'nibe/modbus/';
+  $('mqtt-enable').checked   = !!m.enable;
+  $('mqtt-discovery').checked = !!m.discovery;
+  // Log settings
+  $('log-enable').checked    = !!(c.log && c.log.enable);
+  $('log-debug').checked     = !!(c.log && c.log.debug);
+}
+
+async function loadModelList(selectedPump) {
+  const models = await api('GET', '/models');
+  const sel    = $('pump-model');
+  sel.innerHTML = '<option value="">— Auto-Erkennung —</option>';
+  for (const m of models) {
+    const opt = document.createElement('option');
+    opt.value = m; opt.textContent = m;
+    if (m === selectedPump) opt.selected = true;
+    sel.appendChild(opt);
+  }
+}
+
+// ── Connection save ───────────────────────────────────────────────────────────
+$('btn-save-conn').addEventListener('click', async () => {
+  const pump = $('pump-model').value;
+  const patch = {
+    serial: { port: $('serial-port').value },
+    system: {}
+  };
+  if (pump) patch.system.pump = pump;
+  await api('POST', '/config', patch);
+  showToast('Verbindungseinstellungen gespeichert.');
+});
+
+// ── MQTT save ─────────────────────────────────────────────────────────────────
+$('btn-save-mqtt').addEventListener('click', async () => {
+  await api('POST', '/config', {
+    mqtt: {
+      enable:    $('mqtt-enable').checked,
+      host:      $('mqtt-host').value,
+      port:      $('mqtt-port').value,
+      user:      $('mqtt-user').value,
+      pass:      $('mqtt-pass').value,
+      topic:     $('mqtt-topic').value,
+      discovery: $('mqtt-discovery').checked,
+    }
+  });
+  showToast('MQTT-Einstellungen gespeichert.');
+});
+
+// ── Log settings save ─────────────────────────────────────────────────────────
+$('btn-save-log').addEventListener('click', async () => {
+  await api('POST', '/config', { log: { enable: $('log-enable').checked, debug: $('log-debug').checked } });
+  showToast('Log-Einstellungen gespeichert.');
+});
+
+$('btn-log-clear').addEventListener('click', () => { $('log-view').innerHTML = ''; });
+
+// ── Registers ─────────────────────────────────────────────────────────────────
+let allRegs        = [];
+let registersLoaded = false;
+let currentFilter  = 'all';
+let searchTerm     = '';
+
+async function loadRegisters() {
+  $('reg-tbody').innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:24px">Lade…</td></tr>';
+  allRegs = await api('GET', '/registers');
+  registersLoaded = true;
+  renderTable();
+}
+
+function renderTable() {
+  const q   = searchTerm.toLowerCase();
+  const rows = allRegs.filter(r => {
+    if (currentFilter === 'active' && !r.active) return false;
+    if (currentFilter === 'rw'     && r.mode !== 'R/W') return false;
+    if (q && !String(r.register).includes(q) && !r.titel.toLowerCase().includes(q)) return false;
+    return true;
+  });
+
+  const tbody = $('reg-tbody');
+  tbody.innerHTML = '';
+  for (const r of rows) {
+    const addr  = Number(r.register);
+    const live  = liveValues[addr];
+    const val   = live ? live.value : r.value;
+    const valStr = val !== null && val !== undefined
+      ? `${val}${r.unit ? ' '+r.unit : ''}`
+      : '—';
+    const stale = !live;
+
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="reg-num">${r.register}</td>
+      <td>${escHtml(r.titel)}</td>
+      <td style="color:var(--muted)">${escHtml(r.unit || '—')}</td>
+      <td><span class="tag ${r.mode === 'R/W' ? 'tag-rw' : 'tag-r'}">${r.mode}</span></td>
+      <td><span class="live-val${stale ? ' stale' : ''}" id="val-${addr}">${escHtml(valStr)}</span></td>
+      <td>
+        <label class="switch">
+          <input type="checkbox" data-reg="${addr}" ${r.active ? 'checked' : ''}>
+          <span class="slider"></span>
+        </label>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  }
+
+  $('reg-count').textContent = `${rows.length} von ${allRegs.length} Registern`;
+
+  tbody.querySelectorAll('input[data-reg]').forEach(cb => {
+    cb.addEventListener('change', async () => {
+      const reg = Number(cb.dataset.reg);
+      if (cb.checked) {
+        await api('POST', '/register/add', { register: reg });
+        const r = allRegs.find(x => Number(x.register) === reg);
+        if (r) r.active = true;
+      } else {
+        await api('POST', '/register/remove', { register: reg });
+        const r = allRegs.find(x => Number(x.register) === reg);
+        if (r) r.active = false;
+      }
+    });
+  });
+}
+
+function updateTableCell(register, value, unit) {
+  const el = $(`val-${register}`);
+  if (!el) return;
+  el.textContent = `${value}${unit ? ' '+unit : ''}`;
+  el.classList.remove('stale');
+  // Flash green
+  el.style.transition = 'none';
+  el.style.color = 'var(--accent)';
+  setTimeout(() => { el.style.transition = 'color .6s'; el.style.color = ''; }, 100);
+}
+
+$('reg-search').addEventListener('input', e => {
+  searchTerm = e.target.value;
+  renderTable();
+});
+
+$('btn-reg-refresh').addEventListener('click', () => loadRegisters());
+
+document.querySelectorAll('.filter-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentFilter = btn.dataset.filter;
+    renderTable();
+  });
+});
+
+// ── Filesystem mode ───────────────────────────────────────────────────────────
+async function loadFsStatus() {
+  const { readonly } = await api('GET', '/fsmode');
+  applyFsStatus(readonly);
+}
+
+function applyFsStatus(readonly) {
+  const el = $('fs-status');
+  el.className = 'fs-badge ' + (readonly ? 'ro' : 'rw');
+  el.textContent = readonly ? '🔒 Schreibgeschützt (ro)' : '✏️ Beschreibbar (rw)';
+  $('btn-fs-rw').disabled = !readonly;
+  $('btn-fs-ro').disabled = readonly;
+}
+
+$('btn-fs-rw').addEventListener('click', async () => {
+  const r = await api('POST', '/fsmode', { readonly: false });
+  if (r.ok) applyFsStatus(false);
+});
+$('btn-fs-ro').addEventListener('click', async () => {
+  const r = await api('POST', '/fsmode', { readonly: true });
+  if (r.ok) applyFsStatus(true);
+});
+
+// ── Restart ───────────────────────────────────────────────────────────────────
+$('btn-restart').addEventListener('click', async () => {
+  if (!confirm('Bridge wirklich neu starten?')) return;
+  await api('POST', '/restart');
+  addLogLine('[INFO ] Neustart angefordert — Seite lädt in 8s neu…');
+  setTimeout(() => location.reload(), 8000);
+});
+
+// ── Toast ─────────────────────────────────────────────────────────────────────
+let toastTimer;
+function showToast(msg) {
+  let t = $('toast');
+  if (!t) {
+    t = document.createElement('div');
+    t.id = 'toast';
+    Object.assign(t.style, {
+      position: 'fixed', bottom: '24px', right: '24px',
+      background: 'var(--green)', color: '#0a2018',
+      padding: '10px 18px', borderRadius: '6px',
+      fontWeight: '600', fontSize: '13px', zIndex: '9999',
+      transition: 'opacity .3s',
+    });
+    document.body.appendChild(t);
+  }
+  t.textContent = msg;
+  t.style.opacity = '1';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.style.opacity = '0'; }, 2500);
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+loadConfig();
+openEvents();
+openLogs();
+</script>
+</body>
+</html>

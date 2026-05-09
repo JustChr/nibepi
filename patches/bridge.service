@@ -1,0 +1,15 @@
+[Unit]
+Description=NibePi Bridge (Modbus ↔ MQTT)
+After=network.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/opt/nibepi
+ExecStart=/usr/local/bin/node /opt/nibepi/bridge.js
+Restart=always
+RestartSec=5
+KillMode=process
+
+[Install]
+WantedBy=multi-user.target

@@ -5,8 +5,7 @@
   "bundleDependencies": false,
   "dependencies": {
     "mqtt": "^3.0.0",
-    "serialport": "^7.1.5",
-    "modbus-serial":"8.0.0"
+    "serialport": "10.5.0"
   },
   "deprecated": false,
   "description": "RS485 connection to a Nibe Heatpump with full communication supports",
@@ -15,11 +14,10 @@
     "nibe"
   ],
   "license": "MIT",
-  "main": "index.js",
+  "main": "bridge.js",
   "name": "nibepi",
   "scripts": {
-    "start": "node index.js",
-    "test": "node example.js"
+    "start": "node bridge.js"
   },
   "version": "1.1.1"
 }
