@@ -65,16 +65,18 @@ process.on('message', (m) => {
         if(m.port!==undefined) {
             portName = m.port;
             // Kill any zombie instance still holding the serial port
+            let hadZombie = false;
             try {
                 if(fs.existsSync(PID_FILE)) {
                     const oldPid = parseInt(fs.readFileSync(PID_FILE, 'utf8'));
                     if(oldPid && oldPid !== process.pid) {
-                        try { process.kill(oldPid, 'SIGUSR2'); } catch(e) {}
+                        try { process.kill(oldPid, 'SIGUSR2'); hadZombie = true; } catch(e) {}
                     }
                 }
                 fs.writeFileSync(PID_FILE, process.pid.toString());
             } catch(e) {}
-            openPort();
+            // Give the zombie time to close() before we try to open.
+            setTimeout(openPort, hadZombie ? 1500 : 0);
         } else {
             if(process.connected===true) {
                 process.send({type:"log",data:'Error starting backend, no serial port specified',level:"error",kind:"Serialport"});
@@ -139,7 +141,11 @@ process.on('message', (m) => {
   function cleanExit() {
       try { fs.unlinkSync(PID_FILE); } catch(e) {}
       if(myPort && myPort.isOpen) {
-          myPort.close(() => process.exit(99));
+          // Safety timer: if close() hangs (RS485 HAT mid-frame), force exit so the OS
+          // releases the file descriptor and the new backend can claim the port.
+          const forceExit = setTimeout(() => process.exit(99), 3000);
+          forceExit.unref();
+          myPort.close(() => { clearTimeout(forceExit); process.exit(99); });
       } else {
           process.exit(99);
       }

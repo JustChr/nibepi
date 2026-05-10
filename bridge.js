@@ -696,7 +696,8 @@ const server = http.createServer(async (req, res) => {
                 'rm -rf /tmp/nibepi-ota /tmp/nibepi-ota.tar.gz',
                 'sudo systemctl restart bridge',
             ].join('\n');
-            fs.writeFileSync('/tmp/nibepi-ota.sh', script);
+            try { fs.unlinkSync('/tmp/nibepi-ota.sh'); } catch(e) {}
+            fs.writeFileSync('/tmp/nibepi-ota.sh', script, { mode: 0o755 });
             // Detach so the script survives bridge.js being killed by systemctl restart
             cpExec('nohup bash /tmp/nibepi-ota.sh > /tmp/nibepi-ota.log 2>&1 &');
 
