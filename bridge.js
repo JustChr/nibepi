@@ -17,6 +17,8 @@ const UI_DIR       = path.join(__dirname, 'ui');
 const HTTP_PORT    = Number(process.env.PORT) || 1880;
 const LOG_BUFFER   = 500;
 const GITHUB_REPO  = 'JustChr/nibepi';
+// Register 22 is a raw protocol register not in model files; writing 1 clears alarm 251 (comm loss).
+const ALARM_251_RESET_REG = 22;
 
 const VERSION = (() => {
     try { return JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8')).version; }
@@ -265,10 +267,12 @@ function handleAnnouncement(buf) {
     broadcast('status', getStatus());
     log('info', `Pump: ${model} firmware ${pumpFirmware}`);
 
-    // Acknowledge any Modbus alarm raised during the Pi boot gap
-    if (alarmResetAddr && core && core.connected) {
-        core.send({ type: 'setData', data: buildWriteFrame(alarmResetAddr, 1) });
-        log('info', `Auto-acknowledged alarm on connect (register ${alarmResetAddr}).`);
+    // Acknowledge any Modbus alarm raised during the Pi boot gap.
+    // Register 22 is required for alarm 251 (comm loss); alarmResetAddr covers other alarms.
+    if (core && core.connected) {
+        core.send({ type: 'setData', data: buildWriteFrame(ALARM_251_RESET_REG, 1) });
+        if (alarmResetAddr) core.send({ type: 'setData', data: buildWriteFrame(alarmResetAddr, 1) });
+        log('info', `Auto-acknowledged alarm on connect (reg ${ALARM_251_RESET_REG}${alarmResetAddr ? ', ' + alarmResetAddr : ''}).`);
     }
 
     // Enqueue all configured registers + alarm register
@@ -345,6 +349,11 @@ function handleFrame(buf, rmuFlag) {
             const wasActive = alarmValue !== 0;
             alarmValue = scaled;
             if ((alarmValue !== 0) !== wasActive) broadcast('status', getStatus());
+            // Alarm 251 = comm loss; reg 22 must be written to clear it
+            if (alarmValue === 251 && core && core.connected) {
+                core.send({ type: 'setData', data: buildWriteFrame(ALARM_251_RESET_REG, 1) });
+                log('info', 'Alarm 251 detected — sent comm-loss reset (reg 22).');
+            }
         }
 
         const inConfig = (config.registers || []).some(r => Number(r) === address);
@@ -552,7 +561,7 @@ function getStatus() {
         readonly:     !!(config.system && config.system.readonly),
         version:      VERSION,
         alarm:        alarmValue,
-        canReset:     alarmResetAddr !== null,
+        canReset:     alarmValue === 251 || alarmResetAddr !== null,
     };
 }
 
@@ -661,11 +670,18 @@ const server = http.createServer(async (req, res) => {
             respond(res, 200, { ok: true });
 
         } else if (pathname === '/api/alarm/reset' && req.method === 'POST') {
-            if (!alarmResetAddr || !core || !core.connected) {
-                respond(res, 409, { error: 'Alarm reset not available' }); return;
+            if (!core || !core.connected) {
+                respond(res, 409, { error: 'Pump not connected' }); return;
             }
-            core.send({ type: 'setData', data: buildWriteFrame(alarmResetAddr, 1) });
-            log('info', `Alarm reset sent (register ${alarmResetAddr}).`);
+            if (alarmValue === 251) {
+                core.send({ type: 'setData', data: buildWriteFrame(ALARM_251_RESET_REG, 1) });
+                log('info', `Alarm 251 reset sent (register ${ALARM_251_RESET_REG}).`);
+            } else if (alarmResetAddr) {
+                core.send({ type: 'setData', data: buildWriteFrame(alarmResetAddr, 1) });
+                log('info', `Alarm reset sent (register ${alarmResetAddr}).`);
+            } else {
+                respond(res, 409, { error: 'No alarm reset register available' }); return;
+            }
             respond(res, 200, { ok: true });
 
         } else if (pathname === '/api/logs/clear' && req.method === 'POST') {
