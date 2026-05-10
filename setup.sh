@@ -33,6 +33,7 @@ echo "│          NibePi Setup               │"
 echo "└─────────────────────────────────────┘"
 
 sudo mount -o remount,rw /
+rm -f /tmp/nibepi-reboot-needed
 
 # ── 1. Expand filesystem ──────────────────────────────────────────────────────
 step "Expanding filesystem to full card size..."
@@ -43,7 +44,41 @@ sudo parted -s "$DISK" resizepart "$PART" 100% 2>/dev/null || true
 sudo resize2fs "$ROOT_DEV" 2>/dev/null || true
 ok "Filesystem expanded."
 
-# ── 2. Node.js 18 ─────────────────────────────────────────────────────────────
+# ── 2. Pi hardware configuration ─────────────────────────────────────────────
+step "Configuring Pi hardware..."
+
+# Hostname
+CURRENT_HOST=$(hostname)
+if [ "$CURRENT_HOST" != "nibepi" ]; then
+    echo 'nibepi' | sudo tee /etc/hostname > /dev/null
+    sudo sed -i "s/127.0.1.1.*/127.0.1.1\tnibepi/" /etc/hosts 2>/dev/null || \
+        echo "127.0.1.1	nibepi" | sudo tee -a /etc/hosts > /dev/null
+    touch /tmp/nibepi-reboot-needed
+    ok "Hostname set to nibepi."
+else
+    skip "Hostname (already nibepi)"
+fi
+
+# Enable hardware UART for RS485 (Pi Zero W: PL011 is occupied by BT by default;
+# disable-bt in harden.sh frees it — enable_uart=1 makes it available to userspace)
+if ! grep -q 'enable_uart=1' /boot/config.txt; then
+    echo 'enable_uart=1' | sudo tee -a /boot/config.txt > /dev/null
+    touch /tmp/nibepi-reboot-needed
+    ok "Hardware UART enabled."
+else
+    skip "Hardware UART (already enabled)"
+fi
+
+# Disable serial console so ttyAMA0 is free for RS485
+if grep -qE 'console=(serial0|ttyAMA0)' /boot/cmdline.txt; then
+    sudo sed -i 's/console=serial0,[0-9]* //g;s/console=ttyAMA0,[0-9]* //g' /boot/cmdline.txt
+    touch /tmp/nibepi-reboot-needed
+    ok "Serial console disabled."
+else
+    skip "Serial console (already disabled)"
+fi
+
+# ── 3. Node.js 18 ─────────────────────────────────────────────────────────────
 step "Checking Node.js..."
 CURRENT_NODE=$(/usr/local/bin/node --version 2>/dev/null || echo "none")
 if [ "$CURRENT_NODE" = "$NODE_TARGET" ]; then
@@ -58,7 +93,7 @@ else
     ok "Node.js $(/usr/local/bin/node --version) installed."
 fi
 
-# ── 3. Download repo ───────────────────────────────────────────────────────────
+# ── 4. Download repo ───────────────────────────────────────────────────────────
 step "Downloading NibePi from GitHub..."
 rm -rf /tmp/nibepi-src /tmp/nibepi.tar.gz
 wget -q --show-progress -O /tmp/nibepi.tar.gz "$REPO_URL"
@@ -68,7 +103,7 @@ rm -f /tmp/nibepi.tar.gz
 REPO_DIR=/tmp/nibepi-src
 ok "Downloaded."
 
-# ── 4. Install app files ───────────────────────────────────────────────────────
+# ── 5. Install app files ───────────────────────────────────────────────────────
 step "Installing to $INSTALL_DIR..."
 sudo mkdir -p "$INSTALL_DIR"
 sudo chown pi:pi "$INSTALL_DIR"
@@ -80,7 +115,7 @@ cp -r "$REPO_DIR/lib"          "$INSTALL_DIR/"
 cp -r "$REPO_DIR/models"       "$INSTALL_DIR/"
 ok "Files installed."
 
-# ── 5. npm install ─────────────────────────────────────────────────────────────
+# ── 6. npm install ─────────────────────────────────────────────────────────────
 # Skip if node_modules is present and package.json hasn't changed.
 PKG_HASH=$(md5sum "$INSTALL_DIR/package.json" | cut -d' ' -f1)
 HASH_FILE="$INSTALL_DIR/node_modules/.nibepi_pkg_hash"
@@ -111,28 +146,27 @@ else
     ok "npm dependencies installed."
 fi
 
-# ── 6. Config directory ────────────────────────────────────────────────────────
+# ── 7. Config directory ────────────────────────────────────────────────────────
 step "Setting up config directory..."
 sudo mkdir -p "$CONFIG_DIR"
 sudo chown pi:pi "$CONFIG_DIR"
 ok "$CONFIG_DIR ready."
 
-# ── 7. Systemd service ─────────────────────────────────────────────────────────
+# ── 8. Systemd service ─────────────────────────────────────────────────────────
 step "Installing systemd service..."
 sudo cp "$REPO_DIR/patches/bridge.service" /etc/systemd/system/bridge.service
 sudo systemctl daemon-reload
 sudo systemctl enable bridge
 ok "bridge.service enabled."
 
-# ── 8. Harden ──────────────────────────────────────────────────────────────────
+# ── 9. Harden ──────────────────────────────────────────────────────────────────
 step "Applying hardening..."
-rm -f /tmp/nibepi-reboot-needed
 bash "$REPO_DIR/patches/harden.sh"
 
-# ── 9. Cleanup ─────────────────────────────────────────────────────────────────
+# ── 10. Cleanup ────────────────────────────────────────────────────────────────
 rm -rf /tmp/nibepi-src
 
-# ── 10. Start or reboot ────────────────────────────────────────────────────────
+# ── 11. Start or reboot ────────────────────────────────────────────────────────
 if [ -f /tmp/nibepi-reboot-needed ]; then
     rm -f /tmp/nibepi-reboot-needed
     echo ""

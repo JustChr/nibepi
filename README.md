@@ -71,33 +71,26 @@ Solder screw terminals on the A and B pads of the RS485 HAT. Stack the boards: P
 
 ## Raspberry Pi setup
 
+No custom image needed — start from a standard **Raspberry Pi OS Lite** image.
+
 ### 1. Flash the OS
 
-Download the **original NibePi image** from [anerdins.se](http://anerdins.se/NibePi/nibepi_1.1.1.rar) and flash it to the SD card with [Raspberry Pi Imager](https://www.raspberrypi.com/software/) or [balenaEtcher](https://etcher.balena.io/).
+Download [Raspberry Pi Imager](https://www.raspberrypi.com/software/) and flash **Raspberry Pi OS Lite (32-bit)** to a 16 GB SD card.
 
-The image ships with a read-only root filesystem (plain ext4 mounted ro) to protect the SD card. Settings are only written when you explicitly save them in the UI.
+Before writing, click the ⚙ settings icon and configure:
 
-### 2. Configure WiFi
+| Setting | Value |
+|---|---|
+| Hostname | `nibepi` |
+| Enable SSH | ✓ (password authentication) |
+| Username | `pi` |
+| Password | your choice |
+| WiFi SSID / password | your network |
+| WiFi country | your country code |
 
-With the SD card still in your PC, open the `boot` partition (visible in Windows) and edit `wpa_supplicant.conf`:
+### 2. Run the setup script
 
-```
-ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev
-update_config=1
-country=DE
-
-network={
-    ssid="YOUR_WIFI"
-    psk="YOUR_PASSWORD"
-    key_mgmt=WPA-PSK
-}
-```
-
-Eject the card, insert it into the Pi and power it on.
-
-### 3. Run the setup script
-
-SSH into the Pi (password: `nibe`) and run one command:
+Insert the card, power on the Pi, and SSH in once it appears on the network:
 
 ```bash
 ssh pi@nibepi
@@ -106,12 +99,14 @@ bash <(wget -qO- https://raw.githubusercontent.com/JustChr/nibepi/master/setup.s
 
 The script handles everything automatically:
 - Expands the filesystem to the full card
+- Configures the hardware UART for RS485 (disables serial console, frees UART from Bluetooth)
+- Sets hostname to `nibepi` if not already set
 - Installs Node.js 18 for ARMv6l
-- Downloads the latest NibePi from GitHub
+- Downloads the latest NibePi release from GitHub
 - Installs npm dependencies (compiles serialport, ~6 min)
-- Installs the systemd service
-- Applies hardening (tmpfs, watchdog, read-only root on startup)
-- Reboots
+- Installs and enables the systemd service
+- Applies hardening (read-only root, tmpfs, watchdog, Bluetooth disabled)
+- Reboots if any boot-level changes were made
 
 Total time: ~10 minutes, no further input required.
 
@@ -219,18 +214,12 @@ nibe/modbus/<register>/raw    ← raw scaled value
 
 ## Deploying updates
 
-```powershell
-# From Windows (PowerShell)
-scp bridge.js  pi@nibepi:/tmp/bridge.js
-scp backend.js pi@nibepi:/tmp/backend.js
-```
+Use the **Software** card in the Status & System tab of the UI — click "Check for update", then "Install" if a newer version is available. The bridge restarts automatically and the pump stays connected during the handover.
+
+To update manually from the Pi:
 
 ```bash
-# On the Pi
-sudo mount -o remount,rw / && \
-cp /tmp/bridge.js  /opt/nibepi/bridge.js && \
-cp /tmp/backend.js /opt/nibepi/backend.js && \
-sudo systemctl restart bridge
+bash <(wget -qO- https://raw.githubusercontent.com/JustChr/nibepi/master/setup.sh)
 ```
 
 Restart is graceful: `backend.js` enters zombie mode to keep the pump connected, and the new instance claims the serial port via SIGUSR2 within a few seconds.
@@ -239,7 +228,7 @@ Restart is graceful: `backend.js` enters zombie mode to keep the pump connected,
 
 ## Migrating from the original Node-RED setup
 
-If you are running the original anerdins/nibepi image with Node-RED, you can cut over to bridge.js with zero pump downtime:
+If you are running the original anerdins/nibepi image with Node-RED, run the setup script — it will install bridge.js alongside Node-RED without touching it. Then cut over with zero pump downtime:
 
 ```bash
 # Stop Node-RED — backend.js enters zombie mode, pump keeps getting ACKs
