@@ -895,7 +895,6 @@ function scheduleChartRender() {
 function toggleChart(addr) {
   if (chartedRegisters.has(addr)) {
     chartedRegisters.delete(addr);
-    delete recordedValues[addr];
   } else {
     chartedRegisters.add(addr);
     if (!regColors[addr]) {
