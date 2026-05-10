@@ -16,6 +16,17 @@ const BACKEND_FILE = path.join(__dirname, 'backend.js');
 const UI_DIR       = path.join(__dirname, 'ui');
 const HTTP_PORT    = Number(process.env.PORT) || 1880;
 const LOG_BUFFER   = 500;
+const GITHUB_REPO  = 'JustChr/nibepi';
+
+const VERSION = (() => {
+    try { return JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8')).version; }
+    catch { return '0.0.0'; }
+})();
+
+// ── Ring buffer ───────────────────────────────────────────────────────────────
+const RING_SIZE     = 360;          // 1 h at 10 s interval
+const RING_INTERVAL = 10 * 1000;
+const ringBuffer    = {};           // address (number) → [{t, v}, …]
 
 const MIME = {
     '.html': 'text/html; charset=utf-8',
@@ -513,6 +524,7 @@ function getStatus() {
         firmware:     pumpFirmware,
         mqttConnected,
         readonly:     !!(config.system && config.system.readonly),
+        version:      VERSION,
     };
 }
 
@@ -559,6 +571,7 @@ const server = http.createServer(async (req, res) => {
         res.write(':\n\n');
         eventSseClients.add(res);
         sendSse(res, 'status', getStatus());
+        if (Object.keys(ringBuffer).length > 0) sendSse(res, 'history', ringBuffer);
         req.on('close', () => eventSseClients.delete(res));
         return;
     }
@@ -649,6 +662,44 @@ const server = http.createServer(async (req, res) => {
         } else if (pathname === '/api/models' && req.method === 'GET') {
             respond(res, 200, Object.keys(models));
 
+        } else if (pathname === '/api/version' && req.method === 'GET') {
+            respond(res, 200, { current: VERSION });
+
+        } else if (pathname === '/api/version/check' && req.method === 'GET') {
+            checkLatestRelease((err, info) => {
+                if (err) { respond(res, 502, { error: err.message }); return; }
+                respond(res, 200, info);
+            });
+
+        } else if (pathname === '/api/update' && req.method === 'POST') {
+            const { url, version: nextVer } = await readBody(req);
+            if (!url) { respond(res, 400, { error: 'Missing url' }); return; }
+            respond(res, 200, { ok: true });
+            log('info', `OTA update to ${nextVer || '?'} from ${url}`);
+            const script = [
+                'set -e',
+                'sudo mount -o remount,rw /',
+                'rm -rf /tmp/nibepi-ota /tmp/nibepi-ota.tar.gz',
+                `wget -qO /tmp/nibepi-ota.tar.gz "${url}"`,
+                'mkdir -p /tmp/nibepi-ota',
+                'tar -xf /tmp/nibepi-ota.tar.gz -C /tmp/nibepi-ota --strip-components=1',
+                'D=/tmp/nibepi-ota',
+                'cp "$D/bridge.js"    /opt/nibepi/bridge.js',
+                'cp "$D/backend.js"   /opt/nibepi/backend.js',
+                'cp "$D/package.json" /opt/nibepi/package.json',
+                'cp -r "$D/ui"        /opt/nibepi/ui',
+                'cp -r "$D/lib"       /opt/nibepi/lib',
+                'cp -r "$D/models"    /opt/nibepi/models',
+                'sudo cp "$D/patches/bridge.service" /etc/systemd/system/bridge.service',
+                'sudo systemctl daemon-reload',
+                'sudo mount -o remount,ro /',
+                'rm -rf /tmp/nibepi-ota /tmp/nibepi-ota.tar.gz',
+                'sudo systemctl restart bridge',
+            ].join('\n');
+            fs.writeFileSync('/tmp/nibepi-ota.sh', script);
+            // Detach so the script survives bridge.js being killed by systemctl restart
+            cpExec('nohup bash /tmp/nibepi-ota.sh > /tmp/nibepi-ota.log 2>&1 &');
+
         } else {
             respond(res, 404, { error: 'Not found' });
         }
@@ -657,6 +708,52 @@ const server = http.createServer(async (req, res) => {
         respond(res, 500, { error: e.message });
     }
 });
+
+// ── Ring buffer sampler ───────────────────────────────────────────────────────
+setInterval(() => {
+    const now = Date.now();
+    for (const addr of Object.keys(activeValues)) {
+        const a = Number(addr);
+        if (!ringBuffer[a]) ringBuffer[a] = [];
+        ringBuffer[a].push({ t: now, v: activeValues[a].data });
+        if (ringBuffer[a].length > RING_SIZE) ringBuffer[a].shift();
+    }
+}, RING_INTERVAL);
+
+// ── GitHub release check ──────────────────────────────────────────────────────
+let _cachedRelease = null;
+let _cacheTime     = 0;
+
+function checkLatestRelease(cb) {
+    if (_cachedRelease && Date.now() - _cacheTime < 3_600_000) {
+        return cb(null, _cachedRelease);
+    }
+    const opts = {
+        hostname: 'api.github.com',
+        path:     `/repos/${GITHUB_REPO}/releases/latest`,
+        headers:  { 'User-Agent': 'nibepi-bridge' },
+    };
+    require('https').get(opts, r => {
+        let body = '';
+        r.on('data', d => body += d);
+        r.on('end', () => {
+            try {
+                const rel  = JSON.parse(body);
+                const tag  = rel.tag_name || '';
+                const latest = tag.replace(/^v/, '');
+                _cachedRelease = {
+                    current:    VERSION,
+                    latest,
+                    tag,
+                    url:        rel.tarball_url || '',
+                    newer:      latest && latest !== VERSION,
+                };
+                _cacheTime = Date.now();
+                cb(null, _cachedRelease);
+            } catch(e) { cb(e); }
+        });
+    }).on('error', cb);
+}
 
 // ── Startup ───────────────────────────────────────────────────────────────────
 // Ensure config dir exists

@@ -26,6 +26,7 @@ fi
 if ! grep -q 'tmpfs.*\/tmp' /etc/fstab; then
     echo 'tmpfs  /tmp     tmpfs  defaults,noatime,size=32m  0  0' | sudo tee -a /etc/fstab
     echo 'Added tmpfs /tmp'
+    touch /tmp/nibepi-reboot-needed
 else
     echo 'tmpfs /tmp already in fstab, skipping.'
 fi
@@ -33,6 +34,7 @@ fi
 if ! grep -q 'tmpfs.*\/var\/log' /etc/fstab; then
     echo 'tmpfs  /var/log tmpfs  defaults,noatime,size=16m  0  0' | sudo tee -a /etc/fstab
     echo 'Added tmpfs /var/log'
+    touch /tmp/nibepi-reboot-needed
 else
     echo 'tmpfs /var/log already in fstab, skipping.'
 fi
@@ -41,6 +43,7 @@ fi
 if ! grep -q 'dtparam=watchdog=on' /boot/config.txt; then
     echo 'dtparam=watchdog=on' | sudo tee -a /boot/config.txt
     echo 'Watchdog enabled in /boot/config.txt'
+    touch /tmp/nibepi-reboot-needed
 else
     echo 'Watchdog already enabled, skipping.'
 fi
@@ -53,6 +56,7 @@ echo 'Systemd watchdog timers set.'
 if ! grep -q 'dtoverlay=disable-bt' /boot/config.txt; then
     echo 'dtoverlay=disable-bt' | sudo tee -a /boot/config.txt
     echo 'Bluetooth disabled in /boot/config.txt'
+    touch /tmp/nibepi-reboot-needed
 else
     echo 'Bluetooth already disabled, skipping.'
 fi
@@ -72,4 +76,8 @@ sudo systemctl daemon-reload
 sudo mount -o remount,ro /
 
 echo ''
-echo 'Done. Reboot to activate all changes: sudo reboot'
+if [ -f /tmp/nibepi-reboot-needed ]; then
+    echo 'Done. A reboot is required to activate boot-level changes.'
+else
+    echo 'Done. No boot-level changes — no reboot required.'
+fi

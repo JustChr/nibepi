@@ -6,7 +6,16 @@
 
 set -e
 
-REPO_URL="https://github.com/JustChr/nibepi/archive/refs/heads/master.tar.gz"
+# Resolve latest GitHub release; fall back to master if API is unreachable
+_TAG=$(wget -qO- https://api.github.com/repos/JustChr/nibepi/releases/latest \
+       | grep '"tag_name"' | sed 's/.*"tag_name": *"\([^"]*\)".*/\1/' | head -1)
+if [ -n "$_TAG" ]; then
+    REPO_URL="https://github.com/JustChr/nibepi/archive/refs/tags/${_TAG}.tar.gz"
+    echo "  Using release ${_TAG}"
+else
+    REPO_URL="https://github.com/JustChr/nibepi/archive/refs/heads/master.tar.gz"
+    echo "  Could not resolve latest release, using master."
+fi
 REPO_DIR="/tmp/nibepi-master"
 INSTALL_DIR="/opt/nibepi"
 CONFIG_DIR="/etc/nibepi"
@@ -51,10 +60,12 @@ fi
 
 # ── 3. Download repo ───────────────────────────────────────────────────────────
 step "Downloading NibePi from GitHub..."
-rm -rf "$REPO_DIR"
+rm -rf /tmp/nibepi-src /tmp/nibepi.tar.gz
 wget -q --show-progress -O /tmp/nibepi.tar.gz "$REPO_URL"
-tar -xf /tmp/nibepi.tar.gz -C /tmp/
+mkdir -p /tmp/nibepi-src
+tar -xf /tmp/nibepi.tar.gz -C /tmp/nibepi-src --strip-components=1
 rm -f /tmp/nibepi.tar.gz
+REPO_DIR=/tmp/nibepi-src
 ok "Downloaded."
 
 # ── 4. Install app files ───────────────────────────────────────────────────────
@@ -115,17 +126,30 @@ ok "bridge.service enabled."
 
 # ── 8. Harden ──────────────────────────────────────────────────────────────────
 step "Applying hardening..."
+rm -f /tmp/nibepi-reboot-needed
 bash "$REPO_DIR/patches/harden.sh"
 
 # ── 9. Cleanup ─────────────────────────────────────────────────────────────────
-rm -rf "$REPO_DIR"
+rm -rf /tmp/nibepi-src
 
-echo ""
-echo "┌─────────────────────────────────────┐"
-echo "│  Done! Rebooting in 5 seconds...    │"
-echo "│                                     │"
-echo "│  Open http://nibepi:1880 once the   │"
-echo "│  Pi comes back online.              │"
-echo "└─────────────────────────────────────┘"
-sleep 5
-sudo reboot
+# ── 10. Start or reboot ────────────────────────────────────────────────────────
+if [ -f /tmp/nibepi-reboot-needed ]; then
+    rm -f /tmp/nibepi-reboot-needed
+    echo ""
+    echo "┌─────────────────────────────────────┐"
+    echo "│  Done! Rebooting in 5 seconds...    │"
+    echo "│                                     │"
+    echo "│  Open http://nibepi:1880 once the   │"
+    echo "│  Pi comes back online.              │"
+    echo "└─────────────────────────────────────┘"
+    sleep 5
+    sudo reboot
+else
+    sudo systemctl restart bridge
+    echo ""
+    echo "┌─────────────────────────────────────┐"
+    echo "│  Done! No reboot needed.            │"
+    echo "│                                     │"
+    echo "│  Open http://nibepi:1880            │"
+    echo "└─────────────────────────────────────┘"
+fi

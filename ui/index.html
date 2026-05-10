@@ -187,9 +187,10 @@
 
 <header>
   <h1>NibePi</h1>
-  <span id="hdr-pump"  class="badge"><span class="dot"></span>Pumpe</span>
-  <span id="hdr-mqtt"  class="badge"><span class="dot"></span>MQTT</span>
-  <span id="hdr-model" class="badge" style="display:none"></span>
+  <span id="hdr-pump"    class="badge"><span class="dot"></span>Pumpe</span>
+  <span id="hdr-mqtt"    class="badge"><span class="dot"></span>MQTT</span>
+  <span id="hdr-model"   class="badge" style="display:none"></span>
+  <span id="hdr-version" class="badge" style="margin-left:auto;cursor:default"></span>
 </header>
 
 <nav>
@@ -369,6 +370,27 @@
   <hr class="section-sep">
 
   <div class="card">
+    <h2>Software</h2>
+    <div class="status-grid" style="margin-bottom:14px">
+      <div class="stat-card">
+        <div class="label">Installiert</div>
+        <div class="value muted" id="st-ver-current">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Verfügbar</div>
+        <div class="value muted" id="st-ver-latest">—</div>
+      </div>
+    </div>
+    <div class="btn-row" style="margin-top:0">
+      <button class="btn btn-ghost" id="btn-ver-check">Auf Update prüfen</button>
+      <button class="btn btn-primary" id="btn-ver-install" style="display:none">Installieren</button>
+    </div>
+    <p class="inline-note" id="ver-note"></p>
+  </div>
+
+  <hr class="section-sep">
+
+  <div class="card">
     <h2>Dienst neu starten</h2>
     <p style="color:var(--muted);font-size:13px;margin-bottom:14px">
       Startet den NibePi-Bridge-Dienst neu. Die Verbindung zur Pumpe bleibt dank Zombie-Modus kurz erhalten.
@@ -414,11 +436,23 @@ function openEvents() {
     liveValues[d.register] = { value: d.value, unit: d.unit, ts: Date.now() };
     updateTableCell(d.register, d.value, d.unit);
   });
+  es.addEventListener('history', e => {
+    const hist = JSON.parse(e.data);
+    for (const [addr, pts] of Object.entries(hist)) {
+      const a = Number(addr);
+      recordedValues[a] = pts;
+      if (pts.length > 0) {
+        const last = pts[pts.length - 1];
+        liveValues[a] = { value: last.v, ts: last.t };
+      }
+    }
+    if (chartedRegisters.size > 0) renderCharts();
+  });
   es.addEventListener('fault', e => {
     const d = JSON.parse(e.data);
     addLogLine(`[FAULT] ${d.from}: ${d.message}`, 'WARN');
   });
-  es.onerror = () => setTimeout(openEvents, 3000);
+  es.onerror = () => { es.close(); setTimeout(openEvents, 3000); };
 }
 
 // ── SSE: logs ─────────────────────────────────────────────────────────────────
@@ -456,6 +490,14 @@ function applyStatus(s) {
 
   const mdl = $('hdr-model');
   if (s.model) { mdl.style.display = ''; mdl.textContent = s.model; }
+
+  if (s.version) {
+    const vb = $('hdr-version');
+    vb.textContent = `v${s.version}`;
+    vb.style.display = '';
+    const cur = $('st-ver-current');
+    if (cur) cur.textContent = `v${s.version}`;
+  }
 
   // Status tab cards
   $('st-pump').textContent  = s.connected ? (s.model || 'verbunden') : 'getrennt';
@@ -702,6 +744,47 @@ function showToast(msg) {
 function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
+
+// ── OTA update ────────────────────────────────────────────────────────────────
+let _latestRelease = null;
+
+$('btn-ver-check').addEventListener('click', async () => {
+  $('btn-ver-check').disabled = true;
+  $('ver-note').textContent = 'Prüfe GitHub…';
+  try {
+    const info = await api('GET', '/version/check');
+    _latestRelease = info;
+    $('st-ver-latest').textContent = info.latest ? `v${info.latest}` : '—';
+    if (info.newer) {
+      $('st-ver-latest').className = 'value green';
+      $('btn-ver-install').style.display = '';
+      $('btn-ver-install').textContent = `v${info.latest} installieren`;
+      $('ver-note').textContent = `Neue Version verfügbar: v${info.latest}`;
+    } else {
+      $('st-ver-latest').className = 'value muted';
+      $('btn-ver-install').style.display = 'none';
+      $('ver-note').textContent = 'Bereits auf dem neuesten Stand.';
+    }
+  } catch(e) {
+    $('ver-note').textContent = `Fehler: ${e.message}`;
+  }
+  $('btn-ver-check').disabled = false;
+});
+
+$('btn-ver-install').addEventListener('click', async () => {
+  if (!_latestRelease || !_latestRelease.url) return;
+  if (!confirm(`v${_latestRelease.latest} installieren? Die Bridge startet neu (~30 s).`)) return;
+  $('btn-ver-install').disabled = true;
+  $('ver-note').textContent = 'Update läuft… Bridge startet in Kürze neu.';
+  try {
+    await api('POST', '/update', { url: _latestRelease.url, version: _latestRelease.latest });
+    addLogLine(`[INFO ] OTA Update auf v${_latestRelease.latest} gestartet — Seite lädt in 30s neu…`);
+    setTimeout(() => location.reload(), 30000);
+  } catch(e) {
+    $('ver-note').textContent = `Fehler: ${e.message}`;
+    $('btn-ver-install').disabled = false;
+  }
+});
 
 // ── Chart ─────────────────────────────────────────────────────────────────────
 const MAX_HISTORY      = 200;
