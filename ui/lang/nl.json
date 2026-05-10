@@ -91,5 +91,6 @@
   "hdr.alarm": "⚠ Alarm {0}",
   "stat.alarmCode": "⚠ Alarmcode: {0}",
   "stat.alarmReset": "Alarm resetten",
-  "stat.alarmResetConfirm": "Actief alarm resetten?"
+  "stat.alarmResetConfirm": "Actief alarm resetten?",
+  "stat.alarmCommLossHint": "Alarm 251 (communicatieverlies) — auto-reset elke 10 s. Als het aanhoudt, bevestig op het pompscherm."
 }

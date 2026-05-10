@@ -17,8 +17,6 @@ const UI_DIR       = path.join(__dirname, 'ui');
 const HTTP_PORT    = Number(process.env.PORT) || 1880;
 const LOG_BUFFER   = 500;
 const GITHUB_REPO  = 'JustChr/nibepi';
-// Register 22 is a raw protocol register not in model files; writing 1 clears alarm 251 (comm loss).
-const ALARM_251_RESET_REG = 22;
 
 const VERSION = (() => {
     try { return JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8')).version; }
@@ -159,9 +157,31 @@ let alarmRegAddr      = null;
 let alarmResetAddr    = null;
 let alarmValue        = 0;
 let pendingAlarmReset = false;
+let alarmResetTimer   = null;
 let mqttClient;
 let mqttConnected = false;
 let mqttDiscovered = new Set();
+
+// ── Alarm reset retry ─────────────────────────────────────────────────────────
+function startAlarmReset() {
+    if (alarmResetTimer) return;
+    if (!alarmResetAddr) return;
+    const send = () => {
+        if (!alarmValue || !alarmResetAddr || !core || !core.connected) {
+            clearInterval(alarmResetTimer);
+            alarmResetTimer = null;
+            return;
+        }
+        core.send({ type: 'setData', data: buildWriteFrame(alarmResetAddr, 1) });
+        log('warn', `Alarm ${alarmValue} reset write → reg ${alarmResetAddr} (auto-retry).`);
+    };
+    send();
+    alarmResetTimer = setInterval(send, 10000);
+}
+
+function stopAlarmReset() {
+    if (alarmResetTimer) { clearInterval(alarmResetTimer); alarmResetTimer = null; }
+}
 
 // ── CRC & Modbus frame helpers ────────────────────────────────────────────────
 function calcCRC(data) {
@@ -221,6 +241,7 @@ function spawnBackend() {
     core.on('exit', code => {
         log('warn', `Backend exited (code ${code}), restarting in 5s`);
         pumpConnected = false;
+        stopAlarmReset();
         broadcast('status', getStatus());
         setTimeout(spawnBackend, 5000);
     });
@@ -292,10 +313,9 @@ function handleFrame(buf, rmuFlag) {
     // Deferred alarm reset — sent once after the first real data frame
     if (pendingAlarmReset) {
         pendingAlarmReset = false;
-        if (core && core.connected) {
-            core.send({ type: 'setData', data: buildWriteFrame(ALARM_251_RESET_REG, 1) });
-            if (alarmResetAddr) core.send({ type: 'setData', data: buildWriteFrame(alarmResetAddr, 1) });
-            log('info', `Deferred alarm reset sent after first data frame (reg ${ALARM_251_RESET_REG}${alarmResetAddr ? ', ' + alarmResetAddr : ''}).`);
+        if (alarmResetAddr && core && core.connected) {
+            core.send({ type: 'setData', data: buildWriteFrame(alarmResetAddr, 1) });
+            log('info', `Deferred alarm reset sent after first data frame (reg ${alarmResetAddr}).`);
         }
     }
 
@@ -358,11 +378,15 @@ function handleFrame(buf, rmuFlag) {
         if (address === alarmRegAddr) {
             const prev = alarmValue;
             alarmValue = scaled;
-            if ((alarmValue !== 0) !== (prev !== 0)) broadcast('status', getStatus());
-            // Send comm-loss reset only when alarm first becomes 251 (not every poll)
-            if (alarmValue === 251 && prev !== 251 && core && core.connected) {
-                core.send({ type: 'setData', data: buildWriteFrame(ALARM_251_RESET_REG, 1) });
-                log('info', 'Alarm 251 detected — sent comm-loss reset (reg 22).');
+            if ((alarmValue !== 0) !== (prev !== 0)) {
+                broadcast('status', getStatus());
+                if (alarmValue !== 0) {
+                    log('warn', `Alarm ${alarmValue} active — starting reset retry.`);
+                    startAlarmReset();
+                } else {
+                    log('info', `Alarm cleared (was ${prev}).`);
+                    stopAlarmReset();
+                }
             }
         }
 
@@ -572,7 +596,8 @@ function getStatus() {
         readonly:     !!(config.system && config.system.readonly),
         version:      VERSION,
         alarm:        alarmValue,
-        canReset:     alarmValue === 251 || alarmResetAddr !== null,
+        canReset:     alarmResetAddr !== null,
+        isCommLoss:   alarmValue === 251,
     };
 }
 
@@ -684,15 +709,12 @@ const server = http.createServer(async (req, res) => {
             if (!core || !core.connected) {
                 respond(res, 409, { error: 'Pump not connected' }); return;
             }
-            if (alarmValue === 251) {
-                core.send({ type: 'setData', data: buildWriteFrame(ALARM_251_RESET_REG, 1) });
-                log('info', `Alarm 251 reset sent (register ${ALARM_251_RESET_REG}).`);
-            } else if (alarmResetAddr) {
-                core.send({ type: 'setData', data: buildWriteFrame(alarmResetAddr, 1) });
-                log('info', `Alarm reset sent (register ${alarmResetAddr}).`);
-            } else {
+            if (!alarmResetAddr) {
                 respond(res, 409, { error: 'No alarm reset register available' }); return;
             }
+            core.send({ type: 'setData', data: buildWriteFrame(alarmResetAddr, 1) });
+            log('warn', `Alarm ${alarmValue} reset manually triggered → reg ${alarmResetAddr}.`);
+            startAlarmReset();
             respond(res, 200, { ok: true });
 
         } else if (pathname === '/api/logs/clear' && req.method === 'POST') {

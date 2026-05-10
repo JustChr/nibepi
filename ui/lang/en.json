@@ -91,5 +91,6 @@
   "hdr.alarm": "⚠ Alarm {0}",
   "stat.alarmCode": "⚠ Alarm code: {0}",
   "stat.alarmReset": "Reset Alarm",
-  "stat.alarmResetConfirm": "Reset the active alarm?"
+  "stat.alarmResetConfirm": "Reset the active alarm?",
+  "stat.alarmCommLossHint": "Alarm 251 (comm loss) — auto-reset is retrying every 10 s. If it persists, acknowledge on the pump display."
 }

@@ -355,6 +355,7 @@
     <div id="alarm-row" style="display:none;margin-top:14px;align-items:center;gap:12px;flex-wrap:wrap">
       <span id="st-alarm" class="fs-badge ro"></span>
       <button class="btn btn-danger" id="btn-alarm-reset" data-i18n="stat.alarmReset"></button>
+      <span id="st-alarm-hint" style="display:none;font-size:0.82em;color:var(--color-warn,#b45309)"></span>
     </div>
   </div>
 
@@ -587,6 +588,13 @@ function applyStatus(s) {
   if (alarmActive) {
     $('st-alarm').textContent = t('stat.alarmCode', s.alarm);
     $('btn-alarm-reset').style.display = s.canReset ? '' : 'none';
+    const hint = $('st-alarm-hint');
+    if (s.isCommLoss) {
+      hint.textContent = t('stat.alarmCommLossHint');
+      hint.style.display = '';
+    } else {
+      hint.style.display = 'none';
+    }
   }
 
   if (firstStatus) {

@@ -91,5 +91,6 @@
   "hdr.alarm": "⚠ Alarmă {0}",
   "stat.alarmCode": "⚠ Cod alarmă: {0}",
   "stat.alarmReset": "Resetare alarmă",
-  "stat.alarmResetConfirm": "Resetați alarma activă?"
+  "stat.alarmResetConfirm": "Resetați alarma activă?",
+  "stat.alarmCommLossHint": "Alarma 251 (pierdere comunicare) — resetare automată la 10 s. Dacă persistă, confirmați pe display-ul pompei."
 }

@@ -91,5 +91,6 @@
   "hdr.alarm": "⚠ Alarme {0}",
   "stat.alarmCode": "⚠ Code alarme : {0}",
   "stat.alarmReset": "Réinitialiser alarme",
-  "stat.alarmResetConfirm": "Réinitialiser l'alarme active ?"
+  "stat.alarmResetConfirm": "Réinitialiser l'alarme active ?",
+  "stat.alarmCommLossHint": "Alarme 251 (perte de comm.) — réinitialisation auto toutes les 10 s. Si elle persiste, acquitter sur l'écran de la pompe."
 }

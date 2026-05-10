@@ -91,5 +91,6 @@
   "hdr.alarm": "⚠ Alarm {0}",
   "stat.alarmCode": "⚠ Alarmcode: {0}",
   "stat.alarmReset": "Alarm quittieren",
-  "stat.alarmResetConfirm": "Aktiven Alarm quittieren?"
+  "stat.alarmResetConfirm": "Aktiven Alarm quittieren?",
+  "stat.alarmCommLossHint": "Alarm 251 (Kommunikationsverlust) — Auto-Reset wird alle 10 s wiederholt. Falls er bestehen bleibt, am Pumpen-Display quittieren."
 }

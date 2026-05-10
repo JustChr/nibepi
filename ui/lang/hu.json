@@ -91,5 +91,6 @@
   "hdr.alarm": "⚠ Riasztás {0}",
   "stat.alarmCode": "⚠ Riasztáskód: {0}",
   "stat.alarmReset": "Riasztás visszaállítása",
-  "stat.alarmResetConfirm": "Visszaállítja az aktív riasztást?"
+  "stat.alarmResetConfirm": "Visszaállítja az aktív riasztást?",
+  "stat.alarmCommLossHint": "251-es riasztás (kommunikációvesztés) — automatikus visszaállítás 10 másodpercenként. Ha megmarad, nyugtázza a szivattyú kijelzőjén."
 }
