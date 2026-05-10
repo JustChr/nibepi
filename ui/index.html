@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -187,16 +187,16 @@
 
 <header>
   <h1>NibePi</h1>
-  <span id="hdr-pump"    class="badge"><span class="dot"></span>Pumpe</span>
-  <span id="hdr-mqtt"    class="badge"><span class="dot"></span>MQTT</span>
-  <span id="hdr-model"   class="badge" style="display:none"></span>
+  <span id="hdr-pump" class="badge"><span class="dot"></span><span id="hdr-pump-text"></span></span>
+  <span id="hdr-mqtt" class="badge"><span class="dot"></span><span id="hdr-mqtt-text"></span></span>
+  <span id="hdr-model" class="badge" style="display:none"></span>
   <span id="hdr-version" class="badge" style="margin-left:auto;cursor:default"></span>
 </header>
 
 <nav>
-  <button class="active" data-tab="tab-registers">Register</button>
-  <button data-tab="tab-status">Status &amp; System</button>
-  <button data-tab="tab-settings">Einstellungen</button>
+  <button class="active" data-tab="tab-registers" data-i18n="nav.reg"></button>
+  <button data-tab="tab-status"    data-i18n="nav.status"></button>
+  <button data-tab="tab-settings"  data-i18n="nav.settings"></button>
 </nav>
 
 <main>
@@ -205,55 +205,74 @@
 <div id="tab-settings" class="tab">
 
   <div class="card">
-    <h2>Serielle Verbindung</h2>
-    <div class="form-grid">
-      <div class="form-group">
-        <label>Serieller Port</label>
-        <div style="display:flex;gap:8px;align-items:center">
-          <input type="text" id="serial-port" list="serial-ports-list" placeholder="/dev/ttyAMA0" style="flex:1;min-width:0">
-          <datalist id="serial-ports-list"></datalist>
-          <button class="btn btn-ghost btn-sm" id="btn-scan-serial" title="Ports aktualisieren">↻</button>
-          <button class="btn btn-ghost btn-sm" id="btn-test-serial">Test</button>
-        </div>
-        <p id="serial-test-result" class="inline-note" style="display:none;margin-top:6px"></p>
-      </div>
-      <div class="form-group">
-        <label>Pumpenmodell</label>
-        <select id="pump-model"></select>
-      </div>
-    </div>
-    <div class="btn-row">
-      <button class="btn btn-primary" id="btn-save-conn">Speichern</button>
+    <h2 data-i18n="set.langTitle"></h2>
+    <div class="toggle-row">
+      <label for="ui-lang" style="margin-right:10px" data-i18n="set.lang"></label>
+      <select id="ui-lang" style="width:auto">
+        <option value="en">English</option>
+        <option value="de">Deutsch</option>
+        <option value="fr">Français</option>
+        <option value="es">Español</option>
+        <option value="it">Italiano</option>
+        <option value="pl">Polski</option>
+        <option value="ro">Română</option>
+        <option value="nl">Nederlands</option>
+        <option value="hu">Magyar</option>
+        <option value="el">Ελληνικά</option>
+      </select>
     </div>
   </div>
 
   <div class="card">
-    <h2>MQTT-Broker</h2>
+    <h2 data-i18n="set.serialTitle"></h2>
     <div class="form-grid">
       <div class="form-group">
-        <label>Host</label>
+        <label data-i18n="set.serialPort"></label>
         <div style="display:flex;gap:8px;align-items:center">
-          <input type="text" id="mqtt-host" list="mqtt-hosts-list" placeholder="192.168.1.x" style="flex:1;min-width:0">
+          <input type="text" id="serial-port" list="serial-ports-list" style="flex:1;min-width:0">
+          <datalist id="serial-ports-list"></datalist>
+          <button class="btn btn-ghost btn-sm" id="btn-scan-serial" data-i18n-title="set.scanTitle">↻</button>
+          <button class="btn btn-ghost btn-sm" id="btn-test-serial" data-i18n="set.test"></button>
+        </div>
+        <p id="serial-test-result" class="inline-note" style="display:none;margin-top:6px"></p>
+      </div>
+      <div class="form-group">
+        <label data-i18n="set.pumpModel"></label>
+        <select id="pump-model"></select>
+      </div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-primary" id="btn-save-conn" data-i18n="set.save"></button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2 data-i18n="set.mqttTitle"></h2>
+    <div class="form-grid">
+      <div class="form-group">
+        <label data-i18n="set.host"></label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="text" id="mqtt-host" list="mqtt-hosts-list" style="flex:1;min-width:0">
           <datalist id="mqtt-hosts-list"></datalist>
-          <button class="btn btn-ghost btn-sm" id="btn-scan-mqtt" title="Netzwerk scannen">↻</button>
-          <button class="btn btn-ghost btn-sm" id="btn-test-mqtt">Test</button>
+          <button class="btn btn-ghost btn-sm" id="btn-scan-mqtt" data-i18n-title="set.scanMqtt">↻</button>
+          <button class="btn btn-ghost btn-sm" id="btn-test-mqtt" data-i18n="set.test"></button>
         </div>
         <p id="mqtt-test-result" class="inline-note" style="display:none;margin-top:6px"></p>
       </div>
       <div class="form-group">
-        <label>Port</label>
+        <label data-i18n="set.port"></label>
         <input type="number" id="mqtt-port" placeholder="1883">
       </div>
       <div class="form-group">
-        <label>Benutzername</label>
+        <label data-i18n="set.user"></label>
         <input type="text" id="mqtt-user" autocomplete="off">
       </div>
       <div class="form-group">
-        <label>Passwort</label>
+        <label data-i18n="set.pass"></label>
         <input type="password" id="mqtt-pass" autocomplete="off">
       </div>
       <div class="form-group full">
-        <label>Topic-Präfix</label>
+        <label data-i18n="set.topic"></label>
         <input type="text" id="mqtt-topic" placeholder="nibe/modbus/">
       </div>
     </div>
@@ -262,17 +281,17 @@
         <input type="checkbox" id="mqtt-enable">
         <span class="slider"></span>
       </label>
-      <label for="mqtt-enable">MQTT aktivieren</label>
+      <label for="mqtt-enable" data-i18n="set.mqttEnable"></label>
     </div>
     <div class="toggle-row" style="margin-top:10px">
       <label class="switch">
         <input type="checkbox" id="mqtt-discovery">
         <span class="slider"></span>
       </label>
-      <label for="mqtt-discovery">HA MQTT Discovery aktivieren</label>
+      <label for="mqtt-discovery" data-i18n="set.mqttDisc"></label>
     </div>
     <div class="btn-row">
-      <button class="btn btn-primary" id="btn-save-mqtt">Speichern</button>
+      <button class="btn btn-primary" id="btn-save-mqtt" data-i18n="set.save"></button>
     </div>
   </div>
 
@@ -281,26 +300,26 @@
 <!-- ── Registers tab ── -->
 <div id="tab-registers" class="tab active">
   <div class="search-row">
-    <input type="text" id="reg-search" placeholder="Register-Nr. oder Name suchen…">
-    <button class="btn btn-ghost" id="btn-reg-refresh">↻ Aktualisieren</button>
+    <input type="text" id="reg-search">
+    <button class="btn btn-ghost" id="btn-reg-refresh" data-i18n="reg.refresh"></button>
   </div>
   <div class="filter-row">
-    <button class="filter-btn active" data-filter="all">Alle</button>
-    <button class="filter-btn" data-filter="active">Aktiv</button>
-    <button class="filter-btn" data-filter="rw">R/W</button>
+    <button class="filter-btn active" data-filter="all"    data-i18n="reg.all"></button>
+    <button class="filter-btn"        data-filter="active" data-i18n="reg.active"></button>
+    <button class="filter-btn"        data-filter="rw">R/W</button>
   </div>
   <div id="chart-panel"></div>
   <div class="tbl-wrap">
     <table id="reg-table">
       <thead>
         <tr>
-          <th>Register</th>
-          <th>Name</th>
-          <th>Einheit</th>
-          <th>Modus</th>
-          <th>Wert</th>
-          <th>Chart</th>
-          <th>Aktiv</th>
+          <th data-i18n="col.reg"></th>
+          <th data-i18n="col.name"></th>
+          <th data-i18n="col.unit"></th>
+          <th data-i18n="col.mode"></th>
+          <th data-i18n="col.val"></th>
+          <th data-i18n="col.chart"></th>
+          <th data-i18n="col.active"></th>
         </tr>
       </thead>
       <tbody id="reg-tbody"></tbody>
@@ -313,44 +332,41 @@
 <div id="tab-status" class="tab">
 
   <div class="card">
-    <h2>Systemstatus</h2>
+    <h2 data-i18n="stat.title"></h2>
     <div class="status-grid">
       <div class="stat-card">
-        <div class="label">Pumpe</div>
+        <div class="label" data-i18n="stat.pump"></div>
         <div class="value" id="st-pump">—</div>
       </div>
       <div class="stat-card">
-        <div class="label">Firmware</div>
+        <div class="label" data-i18n="stat.fw"></div>
         <div class="value muted" id="st-fw">—</div>
       </div>
       <div class="stat-card">
-        <div class="label">MQTT</div>
+        <div class="label" data-i18n="stat.mqtt"></div>
         <div class="value" id="st-mqtt">—</div>
       </div>
       <div class="stat-card">
-        <div class="label">Dateisystem</div>
+        <div class="label" data-i18n="stat.fs"></div>
         <div class="value" id="st-fs">—</div>
       </div>
     </div>
   </div>
 
   <div class="card">
-    <h2>Dateisystem</h2>
-    <p style="color:var(--muted);font-size:13px;margin-bottom:14px">
-      Das Root-Dateisystem ist im Nur-Lesen-Modus (SD-Kartenschutz).
-      Vor dem Speichern von Einstellungen wird es automatisch kurz beschreibbar gemacht.
-    </p>
+    <h2 data-i18n="stat.fsTitle"></h2>
+    <p id="stat-fs-desc" style="color:var(--muted);font-size:13px;margin-bottom:14px"></p>
     <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
-      <span id="fs-status" class="fs-badge ro">— unbekannt</span>
-      <button class="btn btn-ghost" id="btn-fs-rw">Beschreibbar machen</button>
-      <button class="btn btn-ghost" id="btn-fs-ro">Schreibschutz aktivieren</button>
+      <span id="fs-status" class="fs-badge ro"></span>
+      <button class="btn btn-ghost" id="btn-fs-rw" data-i18n="stat.makeRw"></button>
+      <button class="btn btn-ghost" id="btn-fs-ro" data-i18n="stat.makeRo"></button>
     </div>
   </div>
 
   <div class="card">
-    <h2>Logging</h2>
+    <h2 data-i18n="log.title"></h2>
     <div class="toggle-row">
-      <label for="log-level" style="margin-right:10px">Log-Level</label>
+      <label for="log-level" style="margin-right:10px" data-i18n="log.level"></label>
       <select id="log-level" class="input-field" style="width:auto">
         <option value="off">Off</option>
         <option value="error">Error</option>
@@ -360,34 +376,34 @@
       </select>
     </div>
     <div class="btn-row" style="margin-top:10px">
-      <button class="btn btn-ghost btn-sm" id="btn-save-log">Speichern</button>
-      <button class="btn btn-ghost btn-sm" id="btn-log-clear">Log leeren</button>
-      <button class="btn btn-ghost btn-sm" id="btn-log-download">Download</button>
+      <button class="btn btn-ghost btn-sm" id="btn-save-log"      data-i18n="log.save"></button>
+      <button class="btn btn-ghost btn-sm" id="btn-log-clear"     data-i18n="log.clear"></button>
+      <button class="btn btn-ghost btn-sm" id="btn-log-download"  data-i18n="log.download"></button>
     </div>
   </div>
 
   <div class="card">
-    <h2>Live-Log</h2>
+    <h2 data-i18n="log.liveTitle"></h2>
     <div id="log-view"></div>
   </div>
 
   <hr class="section-sep">
 
   <div class="card">
-    <h2>Software</h2>
+    <h2 data-i18n="sw.title"></h2>
     <div class="status-grid" style="margin-bottom:14px">
       <div class="stat-card">
-        <div class="label">Installiert</div>
+        <div class="label" data-i18n="sw.installed"></div>
         <div class="value muted" id="st-ver-current">—</div>
       </div>
       <div class="stat-card">
-        <div class="label">Verfügbar</div>
+        <div class="label" data-i18n="sw.available"></div>
         <div class="value muted" id="st-ver-latest">—</div>
       </div>
     </div>
     <div class="btn-row" style="margin-top:0">
-      <button class="btn btn-ghost" id="btn-ver-check">Auf Update prüfen</button>
-      <button class="btn btn-primary" id="btn-ver-install" style="display:none">Installieren</button>
+      <button class="btn btn-ghost"    id="btn-ver-check"   data-i18n="sw.check"></button>
+      <button class="btn btn-primary"  id="btn-ver-install" style="display:none"></button>
     </div>
     <p class="inline-note" id="ver-note"></p>
   </div>
@@ -395,17 +411,53 @@
   <hr class="section-sep">
 
   <div class="card">
-    <h2>Dienst neu starten</h2>
-    <p style="color:var(--muted);font-size:13px;margin-bottom:14px">
-      Startet den NibePi-Bridge-Dienst neu. Die Verbindung zur Pumpe bleibt dank Zombie-Modus kurz erhalten.
-    </p>
-    <button class="btn btn-danger" id="btn-restart">Bridge neu starten</button>
+    <h2 data-i18n="rst.title"></h2>
+    <p id="rst-desc" style="color:var(--muted);font-size:13px;margin-bottom:14px"></p>
+    <button class="btn btn-danger" id="btn-restart" data-i18n="rst.btn"></button>
   </div>
 
 </div>
 </main>
 
 <script>
+// ── i18n ──────────────────────────────────────────────────────────────────────
+let strings = {};
+let currentLang = localStorage.getItem('nibepi-lang') || 'en';
+
+async function loadLang(code) {
+  try {
+    const r = await fetch('/lang/' + code + '.json');
+    if (!r.ok) throw new Error(r.status);
+    strings = await r.json();
+    currentLang = code;
+  } catch {
+    if (code !== 'en') await loadLang('en');
+  }
+}
+
+function t(key, ...args) {
+  const s = strings[key] || key;
+  return args.reduce((r, a, i) => r.replace('{' + i + '}', a), s);
+}
+
+function applyLang() {
+  document.documentElement.lang = currentLang;
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    el.textContent = t(el.dataset.i18n);
+  });
+  document.querySelectorAll('[data-i18n-title]').forEach(el => {
+    el.title = t(el.dataset.i18nTitle);
+  });
+  document.querySelectorAll('[data-i18n-ph]').forEach(el => {
+    el.placeholder = t(el.dataset.i18nPh);
+  });
+  $('reg-search').placeholder = t('reg.ph');
+  $('stat-fs-desc').textContent = t('stat.fsDesc');
+  $('rst-desc').textContent     = t('rst.desc');
+  const uiLangSel = $('ui-lang');
+  if (uiLangSel) uiLangSel.value = currentLang;
+}
+
 // ── Utilities ─────────────────────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
 const qs = sel => document.querySelector(sel);
@@ -417,13 +469,22 @@ async function api(method, path, body) {
   return r.json();
 }
 
+// ── Language selector ─────────────────────────────────────────────────────────
+$('ui-lang').addEventListener('change', async () => {
+  const code = $('ui-lang').value;
+  localStorage.setItem('nibepi-lang', code);
+  await loadLang(code);
+  applyLang();
+  await api('POST', '/config', { ui: { lang: code } });
+});
+
 // ── Tab navigation ────────────────────────────────────────────────────────────
 function switchTab(id) {
   document.querySelectorAll('nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === id));
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.id === id));
   if (id === 'tab-registers' && !registersLoaded) loadRegisters();
   if (id === 'tab-status') loadFsStatus();
-  if (id === 'tab-settings') { scanSerialPorts(); }
+  if (id === 'tab-settings') scanSerialPorts();
 }
 
 document.querySelectorAll('nav button').forEach(btn => {
@@ -431,7 +492,7 @@ document.querySelectorAll('nav button').forEach(btn => {
 });
 
 // ── SSE: status + values ──────────────────────────────────────────────────────
-const liveValues = {};  // register → { value, ts }
+const liveValues = {};
 let firstStatus = true;
 
 function openEvents() {
@@ -479,20 +540,18 @@ function addLogLine(line, forceLevel) {
   view.appendChild(el);
   const atBottom = view.scrollHeight - view.clientHeight - view.scrollTop < 60;
   if (atBottom) view.scrollTop = view.scrollHeight;
-  // Keep last 500 lines
   while (view.children.length > 500) view.removeChild(view.firstChild);
 }
 
 // ── Status application ────────────────────────────────────────────────────────
 function applyStatus(s) {
-  // Header badges
   const pump = $('hdr-pump');
   pump.className = 'badge ' + (s.connected ? 'ok' : 'err');
-  pump.innerHTML = `<span class="dot"></span>${s.connected ? 'Pumpe verbunden' : 'Pumpe getrennt'}`;
+  $('hdr-pump-text').textContent = t(s.connected ? 'hdr.pumpOk' : 'hdr.pumpErr');
 
   const mqtt = $('hdr-mqtt');
   mqtt.className = 'badge ' + (s.mqttConnected ? 'ok' : 'err');
-  mqtt.innerHTML = `<span class="dot"></span>${s.mqttConnected ? 'MQTT verbunden' : 'MQTT getrennt'}`;
+  $('hdr-mqtt-text').textContent = t(s.mqttConnected ? 'hdr.mqttOk' : 'hdr.mqttErr');
 
   const mdl = $('hdr-model');
   if (s.model) { mdl.style.display = ''; mdl.textContent = s.model; }
@@ -505,16 +564,15 @@ function applyStatus(s) {
     if (cur) cur.textContent = `v${s.version}`;
   }
 
-  // Status tab cards
-  $('st-pump').textContent  = s.connected ? (s.model || 'verbunden') : 'getrennt';
-  $('st-pump').className    = 'value ' + (s.connected ? 'green' : 'red');
-  $('st-fw').textContent    = s.firmware || '—';
-  $('st-mqtt').textContent  = s.mqttConnected ? 'verbunden' : 'getrennt';
-  $('st-mqtt').className    = 'value ' + (s.mqttConnected ? 'green' : 'red');
+  $('st-pump').textContent = s.connected ? (s.model || t('hdr.pumpOk')) : t('hdr.pumpErr');
+  $('st-pump').className   = 'value ' + (s.connected ? 'green' : 'red');
+  $('st-fw').textContent   = s.firmware || '—';
+  $('st-mqtt').textContent = t(s.mqttConnected ? 'hdr.mqttOk' : 'hdr.mqttErr');
+  $('st-mqtt').className   = 'value ' + (s.mqttConnected ? 'green' : 'red');
 
   const fsEl = $('st-fs');
-  fsEl.textContent  = s.readonly ? 'Schreibgeschützt' : 'Beschreibbar';
-  fsEl.className    = 'value ' + (s.readonly ? 'muted' : 'green');
+  fsEl.textContent = t(s.readonly ? 'stat.readonly' : 'stat.writable');
+  fsEl.className   = 'value ' + (s.readonly ? 'muted' : 'green');
 
   if (firstStatus) {
     firstStatus = false;
@@ -525,30 +583,36 @@ function applyStatus(s) {
 // ── Config load ───────────────────────────────────────────────────────────────
 async function loadConfig() {
   const c = await api('GET', '/config');
-  // Connection tab
   $('serial-port').value = c.serial && c.serial.port || '/dev/ttyAMA0';
   await loadModelList(c.system && c.system.pump);
-  // MQTT tab
   const m = c.mqtt || {};
-  $('mqtt-host').value       = m.host      || '';
-  $('mqtt-port').value       = m.port      || '1883';
-  $('mqtt-user').value       = m.user      || '';
-  $('mqtt-pass').value       = m.pass      || '';
-  $('mqtt-topic').value      = m.topic     || 'nibe/modbus/';
-  $('mqtt-enable').checked   = !!m.enable;
+  $('mqtt-host').value        = m.host      || '';
+  $('mqtt-port').value        = m.port      || '1883';
+  $('mqtt-user').value        = m.user      || '';
+  $('mqtt-pass').value        = m.pass      || '';
+  $('mqtt-topic').value       = m.topic     || 'nibe/modbus/';
+  $('mqtt-enable').checked    = !!m.enable;
   $('mqtt-discovery').checked = !!m.discovery;
-  // Log settings
-  // Migrate old { enable, debug } format for display
   const logCfg = c.log || {};
   let logLvl = logCfg.level;
   if (logLvl === undefined) logLvl = !logCfg.enable ? 'off' : logCfg.debug ? 'debug' : 'info';
   $('log-level').value = logLvl || 'warn';
+  // Apply saved language if different from what was already loaded
+  const savedLang = (c.ui && c.ui.lang) || 'en';
+  if (savedLang !== currentLang) {
+    await loadLang(savedLang);
+    applyLang();
+  }
 }
 
 async function loadModelList(selectedPump) {
   const models = await api('GET', '/models');
-  const sel    = $('pump-model');
-  sel.innerHTML = '<option value="">— Auto-Erkennung —</option>';
+  const sel = $('pump-model');
+  const autoOpt = document.createElement('option');
+  autoOpt.value = '';
+  autoOpt.textContent = t('set.autoDetect');
+  sel.innerHTML = '';
+  sel.appendChild(autoOpt);
   for (const m of models) {
     const opt = document.createElement('option');
     opt.value = m; opt.textContent = m;
@@ -560,13 +624,10 @@ async function loadModelList(selectedPump) {
 // ── Connection save ───────────────────────────────────────────────────────────
 $('btn-save-conn').addEventListener('click', async () => {
   const pump = $('pump-model').value;
-  const patch = {
-    serial: { port: $('serial-port').value },
-    system: {}
-  };
+  const patch = { serial: { port: $('serial-port').value }, system: {} };
   if (pump) patch.system.pump = pump;
   await api('POST', '/config', patch);
-  showToast('Verbindungseinstellungen gespeichert.');
+  showToast(t('toast.conn'));
 });
 
 // ── MQTT save ─────────────────────────────────────────────────────────────────
@@ -582,7 +643,7 @@ $('btn-save-mqtt').addEventListener('click', async () => {
       discovery: $('mqtt-discovery').checked,
     }
   });
-  showToast('MQTT-Einstellungen gespeichert.');
+  showToast(t('toast.mqtt'));
 });
 
 // ── Serial port scan + test ───────────────────────────────────────────────────
@@ -597,7 +658,6 @@ async function scanSerialPorts() {
       opt.label = p.suggested ? `${p.path} ★ RS485` : p.path + (p.desc ? ` — ${p.desc}` : '');
       dl.appendChild(opt);
     }
-    // Pre-fill if field is empty and an RS485 port was found
     const rs = ports.find(p => p.suggested);
     if (rs && !$('serial-port').value) $('serial-port').value = rs.path;
   } catch {}
@@ -609,14 +669,16 @@ $('btn-test-serial').addEventListener('click', async () => {
   const res = $('serial-test-result');
   res.style.display = 'block';
   res.style.color = 'var(--muted)';
-  res.textContent = 'Teste…';
+  res.textContent = t('ser.testing');
   try {
     const r = await api('POST', '/serial-test', { port: $('serial-port').value });
     res.style.color = r.ok ? 'var(--green)' : 'var(--red)';
-    res.textContent = r.ok ? `✓ Port erreichbar${r.note ? ' — ' + r.note : ''}` : `✗ ${r.error}`;
+    res.textContent = r.ok
+      ? (r.note ? t('ser.okNote', r.note) : t('ser.ok'))
+      : t('ser.fail', r.error);
   } catch (e) {
     res.style.color = 'var(--red)';
-    res.textContent = `✗ ${e.message}`;
+    res.textContent = t('ser.fail', e.message);
   }
 });
 
@@ -646,7 +708,7 @@ $('btn-test-mqtt').addEventListener('click', async () => {
   const res = $('mqtt-test-result');
   res.style.display = 'block';
   res.style.color = 'var(--muted)';
-  res.textContent = 'Teste…';
+  res.textContent = t('mqtt.testing');
   try {
     const r = await api('POST', '/mqtt-test', {
       host: $('mqtt-host').value,
@@ -655,17 +717,17 @@ $('btn-test-mqtt').addEventListener('click', async () => {
       pass: $('mqtt-pass').value,
     });
     res.style.color = r.ok ? 'var(--green)' : 'var(--red)';
-    res.textContent = r.ok ? '✓ Verbindung erfolgreich' : `✗ ${r.error}`;
+    res.textContent = r.ok ? t('mqtt.ok') : t('mqtt.fail', r.error);
   } catch (e) {
     res.style.color = 'var(--red)';
-    res.textContent = `✗ ${e.message}`;
+    res.textContent = t('mqtt.fail', e.message);
   }
 });
 
 // ── Log settings save ─────────────────────────────────────────────────────────
 $('btn-save-log').addEventListener('click', async () => {
   await api('POST', '/config', { log: { level: $('log-level').value } });
-  showToast('Log-Einstellungen gespeichert.');
+  showToast(t('toast.log'));
 });
 
 $('btn-log-clear').addEventListener('click', async () => {
@@ -682,20 +744,20 @@ $('btn-log-download').addEventListener('click', () => {
 });
 
 // ── Registers ─────────────────────────────────────────────────────────────────
-let allRegs        = [];
+let allRegs         = [];
 let registersLoaded = false;
-let currentFilter  = 'all';
-let searchTerm     = '';
+let currentFilter   = 'all';
+let searchTerm      = '';
 
 async function loadRegisters() {
-  $('reg-tbody').innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:24px">Lade…</td></tr>';
+  $('reg-tbody').innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:24px">${t('reg.loading')}</td></tr>`;
   allRegs = await api('GET', '/registers');
   registersLoaded = true;
   renderTable();
 }
 
 function renderTable() {
-  const q   = searchTerm.toLowerCase();
+  const q = searchTerm.toLowerCase();
   const rows = allRegs.filter(r => {
     if (currentFilter === 'active' && !r.active) return false;
     if (currentFilter === 'rw'     && r.mode !== 'R/W') return false;
@@ -706,14 +768,11 @@ function renderTable() {
   const tbody = $('reg-tbody');
   tbody.innerHTML = '';
   for (const r of rows) {
-    const addr  = Number(r.register);
-    const live  = liveValues[addr];
-    const val   = live ? live.value : r.value;
-    const valStr = val !== null && val !== undefined
-      ? `${val}${r.unit ? ' '+r.unit : ''}`
-      : '—';
-    const stale = !live;
-
+    const addr   = Number(r.register);
+    const live   = liveValues[addr];
+    const val    = live ? live.value : r.value;
+    const valStr = val !== null && val !== undefined ? `${val}${r.unit ? ' '+r.unit : ''}` : '—';
+    const stale  = !live;
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td class="reg-num">${r.register}</td>
@@ -734,7 +793,7 @@ function renderTable() {
     tbody.appendChild(tr);
   }
 
-  $('reg-count').textContent = `${rows.length} von ${allRegs.length} Registern`;
+  $('reg-count').textContent = t('reg.count', rows.length, allRegs.length);
 
   tbody.querySelectorAll('button[data-chart]').forEach(btn => {
     btn.addEventListener('click', () => toggleChart(Number(btn.dataset.chart)));
@@ -765,7 +824,6 @@ function updateTableCell(register, value, unit) {
     el.style.color = 'var(--accent)';
     setTimeout(() => { el.style.transition = 'color .6s'; el.style.color = ''; }, 100);
   }
-  // Record for chart
   if (chartedRegisters.has(register)) {
     if (!recordedValues[register]) recordedValues[register] = [];
     recordedValues[register].push({ t: Date.now(), v: value });
@@ -774,11 +832,7 @@ function updateTableCell(register, value, unit) {
   }
 }
 
-$('reg-search').addEventListener('input', e => {
-  searchTerm = e.target.value;
-  renderTable();
-});
-
+$('reg-search').addEventListener('input', e => { searchTerm = e.target.value; renderTable(); });
 $('btn-reg-refresh').addEventListener('click', () => loadRegisters());
 
 document.querySelectorAll('.filter-btn').forEach(btn => {
@@ -798,8 +852,8 @@ async function loadFsStatus() {
 
 function applyFsStatus(readonly) {
   const el = $('fs-status');
-  el.className = 'fs-badge ' + (readonly ? 'ro' : 'rw');
-  el.textContent = readonly ? '🔒 Schreibgeschützt (ro)' : '✏️ Beschreibbar (rw)';
+  el.className  = 'fs-badge ' + (readonly ? 'ro' : 'rw');
+  el.textContent = t(readonly ? 'stat.fsRo' : 'stat.fsRw');
   $('btn-fs-rw').disabled = !readonly;
   $('btn-fs-ro').disabled = readonly;
 }
@@ -815,32 +869,32 @@ $('btn-fs-ro').addEventListener('click', async () => {
 
 // ── Restart ───────────────────────────────────────────────────────────────────
 $('btn-restart').addEventListener('click', async () => {
-  if (!confirm('Bridge wirklich neu starten?')) return;
+  if (!confirm(t('rst.confirm'))) return;
   await api('POST', '/restart');
-  addLogLine('[INFO ] Neustart angefordert — Seite lädt in 8s neu…');
+  addLogLine(t('rst.log'));
   setTimeout(() => location.reload(), 8000);
 });
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
 let toastTimer;
 function showToast(msg) {
-  let t = $('toast');
-  if (!t) {
-    t = document.createElement('div');
-    t.id = 'toast';
-    Object.assign(t.style, {
+  let toast = $('toast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'toast';
+    Object.assign(toast.style, {
       position: 'fixed', bottom: '24px', right: '24px',
       background: 'var(--green)', color: '#0a2018',
       padding: '10px 18px', borderRadius: '6px',
       fontWeight: '600', fontSize: '13px', zIndex: '9999',
       transition: 'opacity .3s',
     });
-    document.body.appendChild(t);
+    document.body.appendChild(toast);
   }
-  t.textContent = msg;
-  t.style.opacity = '1';
+  toast.textContent = msg;
+  toast.style.opacity = '1';
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { t.style.opacity = '0'; }, 2500);
+  toastTimer = setTimeout(() => { toast.style.opacity = '0'; }, 2500);
 }
 
 function escHtml(s) {
@@ -852,7 +906,7 @@ let _latestRelease = null;
 
 $('btn-ver-check').addEventListener('click', async () => {
   $('btn-ver-check').disabled = true;
-  $('ver-note').textContent = 'Prüfe GitHub…';
+  $('ver-note').textContent = t('sw.checking');
   try {
     const info = await api('GET', '/version/check');
     _latestRelease = info;
@@ -860,30 +914,30 @@ $('btn-ver-check').addEventListener('click', async () => {
     if (info.newer) {
       $('st-ver-latest').className = 'value green';
       $('btn-ver-install').style.display = '';
-      $('btn-ver-install').textContent = `v${info.latest} installieren`;
-      $('ver-note').textContent = `Neue Version verfügbar: v${info.latest}`;
+      $('btn-ver-install').textContent = t('sw.install', info.latest);
+      $('ver-note').textContent = t('sw.newVer', info.latest);
     } else {
       $('st-ver-latest').className = 'value muted';
       $('btn-ver-install').style.display = 'none';
-      $('ver-note').textContent = 'Bereits auf dem neuesten Stand.';
+      $('ver-note').textContent = t('sw.upToDate');
     }
   } catch(e) {
-    $('ver-note').textContent = `Fehler: ${e.message}`;
+    $('ver-note').textContent = t('sw.error', e.message);
   }
   $('btn-ver-check').disabled = false;
 });
 
 $('btn-ver-install').addEventListener('click', async () => {
   if (!_latestRelease || !_latestRelease.url) return;
-  if (!confirm(`v${_latestRelease.latest} installieren? Die Bridge startet neu (~30 s).`)) return;
+  if (!confirm(t('ota.confirm', _latestRelease.latest))) return;
   $('btn-ver-install').disabled = true;
-  $('ver-note').textContent = 'Update läuft… Bridge startet in Kürze neu.';
+  $('ver-note').textContent = t('sw.updating');
   try {
     await api('POST', '/update', { url: _latestRelease.url, version: _latestRelease.latest });
-    addLogLine(`[INFO ] OTA Update auf v${_latestRelease.latest} gestartet — Seite lädt in 30s neu…`);
+    addLogLine(t('ota.log', _latestRelease.latest));
     setTimeout(() => location.reload(), 30000);
   } catch(e) {
-    $('ver-note').textContent = `Fehler: ${e.message}`;
+    $('ver-note').textContent = t('sw.error', e.message);
     $('btn-ver-install').disabled = false;
   }
 });
@@ -891,10 +945,10 @@ $('btn-ver-install').addEventListener('click', async () => {
 // ── Chart ─────────────────────────────────────────────────────────────────────
 const MAX_HISTORY      = 200;
 const chartedRegisters = new Set();
-const recordedValues   = {};   // register → [{t, v}]
+const recordedValues   = {};
 const CHART_COLORS     = ['#4f8ef7','#3ecf8e','#f7c948','#f75f5f','#a78bfa','#f97316','#06b6d4','#84cc16'];
 let   chartColorIdx    = 0;
-const regColors        = {};   // register → color
+const regColors        = {};
 let   chartRafPending  = false;
 
 function scheduleChartRender() {
@@ -912,10 +966,8 @@ function toggleChart(addr) {
       regColors[addr] = CHART_COLORS[chartColorIdx % CHART_COLORS.length];
       chartColorIdx++;
     }
-    // Preserve ring-buffer history already received via SSE; only init if empty
     if (!recordedValues[addr]) recordedValues[addr] = [];
   }
-  // Refresh chart button state in table
   document.querySelectorAll('button[data-chart]').forEach(btn => {
     const a = Number(btn.dataset.chart);
     btn.classList.toggle('active', chartedRegisters.has(a));
@@ -933,7 +985,6 @@ function renderCharts() {
   const plotW = W - PAD_L - PAD_R;
   const plotH = H - PAD_V * 2;
 
-  // ── Shared time range across ALL charted registers ──────────────────────────
   let gTmin = Infinity, gTmax = -Infinity;
   for (const addr of regs) {
     for (const p of (recordedValues[addr] || [])) {
@@ -948,27 +999,27 @@ function renderCharts() {
     const s = Math.round(ms / 1000);
     return s < 60 ? `${s}s` : s < 3600 ? `${Math.round(s / 60)}min` : `${(s / 3600).toFixed(1)}h`;
   };
-  const toX = t => PAD_L + ((t - gTmin) / gRange) * plotW;
+  const toX = ts => PAD_L + ((ts - gTmin) / gRange) * plotW;
 
   const ruler = `<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);padding:2px ${PAD_R}px 4px ${PAD_L}px">
-    <span>vor ${fmtDur(Date.now() - gTmin)}</span>
+    <span>${t('chart.ago', fmtDur(Date.now() - gTmin))}</span>
     <span style="opacity:.5">↔ ${fmtDur(gTmax - gTmin)}</span>
-    <span>jetzt</span>
+    <span>${t('chart.now')}</span>
   </div>`;
 
   const html = regs.map(addr => {
-    const pts   = recordedValues[addr] || [];
-    const reg   = allRegs.find(r => Number(r.register) === addr);
-    const title = reg ? reg.titel : `#${addr}`;
-    const unit  = reg ? (reg.unit || '') : '';
-    const color = regColors[addr] || '#4f8ef7';
-    const closeBtn = `<button class="chart-btn" onclick="toggleChart(${addr})" title="Schließen">×</button>`;
+    const pts    = recordedValues[addr] || [];
+    const reg    = allRegs.find(r => Number(r.register) === addr);
+    const title  = reg ? reg.titel : `#${addr}`;
+    const unit   = reg ? (reg.unit || '') : '';
+    const color  = regColors[addr] || '#4f8ef7';
+    const closeBtn = `<button class="chart-btn" onclick="toggleChart(${addr})" title="${t('chart.close')}">×</button>`;
 
     if (pts.length < 2) {
       return `<div class="sparkline-wrap">
         <div class="sparkline-header">
           <span class="sparkline-title" style="color:${color}">${escHtml(title)}</span>
-          <span class="sparkline-meta">Warte auf Daten…</span>
+          <span class="sparkline-meta">${t('chart.waiting')}</span>
           ${closeBtn}
         </div>
       </div>`;
@@ -994,7 +1045,7 @@ function renderCharts() {
     return `<div class="sparkline-wrap">
       <div class="sparkline-header">
         <span class="sparkline-title" style="color:${color}">${escHtml(title)}</span>
-        <span class="sparkline-meta">${cur} ${escHtml(unit)} &nbsp;·&nbsp; ↓${minV} ↑${maxV} &nbsp;·&nbsp; ${pts.length} Punkte</span>
+        <span class="sparkline-meta">${cur} ${escHtml(unit)} &nbsp;&middot;&nbsp; ↓${minV} ↑${maxV} &nbsp;&middot;&nbsp; ${pts.length} pts</span>
         ${closeBtn}
       </div>
       <svg class="sparkline-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
@@ -1021,9 +1072,7 @@ function renderCharts() {
 }
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
-loadConfig();
-openEvents();
-openLogs();
+loadLang(currentLang).then(() => { applyLang(); loadConfig(); openEvents(); openLogs(); });
 </script>
 </body>
 </html>

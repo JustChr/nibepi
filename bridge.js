@@ -44,6 +44,7 @@ const DEFAULT_CONFIG = {
                   topic: 'nibe/modbus/', discovery: false },
     system:     { readonly: true },
     log:        { level: 'warn' },
+    ui:         { lang: 'en' },
 };
 
 // ── Config ────────────────────────────────────────────────────────────────────
