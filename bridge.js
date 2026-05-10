@@ -753,6 +753,7 @@ const server = http.createServer(async (req, res) => {
                 'cp "$D/bridge.js"    /opt/nibepi/bridge.js',
                 'cp "$D/backend.js"   /opt/nibepi/backend.js',
                 'cp "$D/package.json" /opt/nibepi/package.json',
+                'sudo chmod -R u+w /opt/nibepi/ui /opt/nibepi/lib /opt/nibepi/models 2>/dev/null || true',
                 'sudo rm -rf /opt/nibepi/ui /opt/nibepi/lib /opt/nibepi/models',
                 'sudo cp -r "$D/ui"        /opt/nibepi/ui',
                 'sudo cp -r "$D/lib"       /opt/nibepi/lib',
