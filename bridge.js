@@ -662,6 +662,69 @@ const server = http.createServer(async (req, res) => {
         } else if (pathname === '/api/models' && req.method === 'GET') {
             respond(res, 200, Object.keys(models));
 
+        } else if (pathname === '/api/serial-ports' && req.method === 'GET') {
+            const { SerialPort } = require('serialport');
+            SerialPort.list().then(ports => {
+                const RS485 = ['ttyAMA', 'ttyUSB', 'ttyACM'];
+                const out = ports
+                    .map(p => ({
+                        path:      p.path,
+                        desc:      p.manufacturer || p.pnpId || '',
+                        suggested: RS485.some(h => p.path.includes(h)),
+                    }))
+                    .sort((a, b) => (b.suggested ? 1 : 0) - (a.suggested ? 1 : 0));
+                respond(res, 200, { ports: out });
+            }).catch(err => respond(res, 500, { error: err.message }));
+
+        } else if (pathname === '/api/serial-test' && req.method === 'POST') {
+            readBody(req).then(body => {
+                const port = body && body.port;
+                if (!port) { respond(res, 400, { error: 'Missing port' }); return; }
+                const { SerialPort } = require('serialport');
+                const sp = new SerialPort({ path: port, baudRate: 9600, autoOpen: false });
+                sp.open(err => {
+                    if (!err) { sp.close(() => respond(res, 200, { ok: true })); return; }
+                    // EBUSY means the backend already owns this port — that's fine
+                    if (err.code === 'EBUSY' || err.message.includes('busy')) {
+                        respond(res, 200, { ok: true, note: 'Port ist belegt — aktive Verbindung läuft' });
+                    } else {
+                        respond(res, 200, { ok: false, error: err.message });
+                    }
+                });
+            }).catch(err => respond(res, 500, { error: err.message }));
+
+        } else if (pathname === '/api/mqtt-scan' && req.method === 'GET') {
+            cpExec("ip route show default 2>/dev/null | awk '/default/{print $3;exit}'", (_, gw) => {
+                const net = require('net');
+                const candidates = ['homeassistant.local', (gw || '').trim(), '127.0.0.1']
+                    .filter((h, i, a) => h && a.indexOf(h) === i);
+                let pending = candidates.length;
+                const found = [];
+                if (!pending) { respond(res, 200, { hosts: [] }); return; }
+                candidates.forEach(host => {
+                    const s = new net.Socket();
+                    s.setTimeout(1500);
+                    s.connect(1883, host, () => { found.push(host); s.destroy(); if (!--pending) respond(res, 200, { hosts: found }); });
+                    s.on('error',   () => { if (!--pending) respond(res, 200, { hosts: found }); });
+                    s.on('timeout', () => { s.destroy(); if (!--pending) respond(res, 200, { hosts: found }); });
+                });
+            });
+
+        } else if (pathname === '/api/mqtt-test' && req.method === 'POST') {
+            readBody(req).then(body => {
+                if (!body || !body.host) { respond(res, 400, { error: 'Missing host' }); return; }
+                const mqttLib = require('mqtt');
+                const url = `mqtt://${body.host}:${body.port || 1883}`;
+                const opts = { connectTimeout: 5000, reconnectPeriod: 0 };
+                if (body.user) { opts.username = body.user; opts.password = body.pass || ''; }
+                const tc = mqttLib.connect(url, opts);
+                let done = false;
+                const finish = (ok, msg) => { if (done) return; done = true; tc.end(true); respond(res, 200, { ok, error: msg }); };
+                tc.on('connect', () => finish(true));
+                tc.on('error',   e  => finish(false, e.message));
+                setTimeout(()       => finish(false, 'Timeout'), 6000);
+            }).catch(err => respond(res, 500, { error: err.message }));
+
         } else if (pathname === '/api/version' && req.method === 'GET') {
             respond(res, 200, { current: VERSION });
 

@@ -194,42 +194,51 @@
 </header>
 
 <nav>
-  <button class="active" data-tab="tab-connection">Verbindung</button>
-  <button data-tab="tab-mqtt">MQTT</button>
-  <button data-tab="tab-registers">Register</button>
+  <button class="active" data-tab="tab-registers">Register</button>
   <button data-tab="tab-status">Status &amp; System</button>
+  <button data-tab="tab-settings">Einstellungen</button>
 </nav>
 
 <main>
 
-<!-- ── Connection tab ── -->
-<div id="tab-connection" class="tab active">
+<!-- ── Settings tab ── -->
+<div id="tab-settings" class="tab">
+
   <div class="card">
     <h2>Serielle Verbindung</h2>
     <div class="form-grid">
       <div class="form-group">
         <label>Serieller Port</label>
-        <input type="text" id="serial-port" placeholder="/dev/ttyAMA0">
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="text" id="serial-port" list="serial-ports-list" placeholder="/dev/ttyAMA0" style="flex:1;min-width:0">
+          <datalist id="serial-ports-list"></datalist>
+          <button class="btn btn-ghost btn-sm" id="btn-scan-serial" title="Ports aktualisieren">↻</button>
+          <button class="btn btn-ghost btn-sm" id="btn-test-serial">Test</button>
+        </div>
+        <p id="serial-test-result" class="inline-note" style="display:none;margin-top:6px"></p>
       </div>
       <div class="form-group">
         <label>Pumpenmodell</label>
         <select id="pump-model"></select>
       </div>
     </div>
+    <div class="btn-row">
+      <button class="btn btn-primary" id="btn-save-conn">Speichern</button>
+    </div>
   </div>
-  <div class="btn-row">
-    <button class="btn btn-primary" id="btn-save-conn">Speichern</button>
-  </div>
-</div>
 
-<!-- ── MQTT tab ── -->
-<div id="tab-mqtt" class="tab">
   <div class="card">
     <h2>MQTT-Broker</h2>
     <div class="form-grid">
       <div class="form-group">
         <label>Host</label>
-        <input type="text" id="mqtt-host" placeholder="192.168.1.x">
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="text" id="mqtt-host" list="mqtt-hosts-list" placeholder="192.168.1.x" style="flex:1;min-width:0">
+          <datalist id="mqtt-hosts-list"></datalist>
+          <button class="btn btn-ghost btn-sm" id="btn-scan-mqtt" title="Netzwerk scannen">↻</button>
+          <button class="btn btn-ghost btn-sm" id="btn-test-mqtt">Test</button>
+        </div>
+        <p id="mqtt-test-result" class="inline-note" style="display:none;margin-top:6px"></p>
       </div>
       <div class="form-group">
         <label>Port</label>
@@ -248,10 +257,7 @@
         <input type="text" id="mqtt-topic" placeholder="nibe/modbus/">
       </div>
     </div>
-  </div>
-  <div class="card">
-    <h2>Home Assistant Discovery</h2>
-    <div class="toggle-row">
+    <div class="toggle-row" style="margin-top:4px">
       <label class="switch">
         <input type="checkbox" id="mqtt-enable">
         <span class="slider"></span>
@@ -265,14 +271,15 @@
       </label>
       <label for="mqtt-discovery">HA MQTT Discovery aktivieren</label>
     </div>
+    <div class="btn-row">
+      <button class="btn btn-primary" id="btn-save-mqtt">Speichern</button>
+    </div>
   </div>
-  <div class="btn-row">
-    <button class="btn btn-primary" id="btn-save-mqtt">Speichern</button>
-  </div>
+
 </div>
 
 <!-- ── Registers tab ── -->
-<div id="tab-registers" class="tab">
+<div id="tab-registers" class="tab active">
   <div class="search-row">
     <input type="text" id="reg-search" placeholder="Register-Nr. oder Name suchen…">
     <button class="btn btn-ghost" id="btn-reg-refresh">↻ Aktualisieren</button>
@@ -414,19 +421,21 @@ async function api(method, path, body) {
 }
 
 // ── Tab navigation ────────────────────────────────────────────────────────────
+function switchTab(id) {
+  document.querySelectorAll('nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === id));
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.id === id));
+  if (id === 'tab-registers' && !registersLoaded) loadRegisters();
+  if (id === 'tab-status') loadFsStatus();
+  if (id === 'tab-settings') { scanSerialPorts(); }
+}
+
 document.querySelectorAll('nav button').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
-    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-    btn.classList.add('active');
-    $(btn.dataset.tab).classList.add('active');
-    if (btn.dataset.tab === 'tab-registers' && !registersLoaded) loadRegisters();
-    if (btn.dataset.tab === 'tab-status') loadFsStatus();
-  });
+  btn.addEventListener('click', () => switchTab(btn.dataset.tab));
 });
 
 // ── SSE: status + values ──────────────────────────────────────────────────────
 const liveValues = {};  // register → { value, ts }
+let firstStatus = true;
 
 function openEvents() {
   const es = new EventSource('/api/events');
@@ -509,6 +518,11 @@ function applyStatus(s) {
   const fsEl = $('st-fs');
   fsEl.textContent  = s.readonly ? 'Schreibgeschützt' : 'Beschreibbar';
   fsEl.className    = 'value ' + (s.readonly ? 'muted' : 'green');
+
+  if (firstStatus) {
+    firstStatus = false;
+    switchTab(s.connected ? 'tab-registers' : 'tab-settings');
+  }
 }
 
 // ── Config load ───────────────────────────────────────────────────────────────
@@ -569,6 +583,83 @@ $('btn-save-mqtt').addEventListener('click', async () => {
     }
   });
   showToast('MQTT-Einstellungen gespeichert.');
+});
+
+// ── Serial port scan + test ───────────────────────────────────────────────────
+async function scanSerialPorts() {
+  const dl = $('serial-ports-list');
+  dl.innerHTML = '';
+  try {
+    const { ports } = await api('GET', '/serial-ports');
+    for (const p of ports) {
+      const opt = document.createElement('option');
+      opt.value = p.path;
+      opt.label = p.suggested ? `${p.path} ★ RS485` : p.path + (p.desc ? ` — ${p.desc}` : '');
+      dl.appendChild(opt);
+    }
+    // Pre-fill if field is empty and an RS485 port was found
+    const rs = ports.find(p => p.suggested);
+    if (rs && !$('serial-port').value) $('serial-port').value = rs.path;
+  } catch {}
+}
+
+$('btn-scan-serial').addEventListener('click', scanSerialPorts);
+
+$('btn-test-serial').addEventListener('click', async () => {
+  const res = $('serial-test-result');
+  res.style.display = 'block';
+  res.style.color = 'var(--muted)';
+  res.textContent = 'Teste…';
+  try {
+    const r = await api('POST', '/serial-test', { port: $('serial-port').value });
+    res.style.color = r.ok ? 'var(--green)' : 'var(--red)';
+    res.textContent = r.ok ? `✓ Port erreichbar${r.note ? ' — ' + r.note : ''}` : `✗ ${r.error}`;
+  } catch (e) {
+    res.style.color = 'var(--red)';
+    res.textContent = `✗ ${e.message}`;
+  }
+});
+
+// ── MQTT scan + test ──────────────────────────────────────────────────────────
+async function scanMqttHosts() {
+  const btn = $('btn-scan-mqtt');
+  btn.disabled = true;
+  btn.textContent = '…';
+  try {
+    const { hosts } = await api('GET', '/mqtt-scan');
+    const dl = $('mqtt-hosts-list');
+    dl.innerHTML = '';
+    for (const h of hosts) {
+      const opt = document.createElement('option');
+      opt.value = h;
+      dl.appendChild(opt);
+    }
+    if (hosts.length > 0 && !$('mqtt-host').value) $('mqtt-host').value = hosts[0];
+  } catch {}
+  btn.disabled = false;
+  btn.textContent = '↻';
+}
+
+$('btn-scan-mqtt').addEventListener('click', scanMqttHosts);
+
+$('btn-test-mqtt').addEventListener('click', async () => {
+  const res = $('mqtt-test-result');
+  res.style.display = 'block';
+  res.style.color = 'var(--muted)';
+  res.textContent = 'Teste…';
+  try {
+    const r = await api('POST', '/mqtt-test', {
+      host: $('mqtt-host').value,
+      port: $('mqtt-port').value || '1883',
+      user: $('mqtt-user').value,
+      pass: $('mqtt-pass').value,
+    });
+    res.style.color = r.ok ? 'var(--green)' : 'var(--red)';
+    res.textContent = r.ok ? '✓ Verbindung erfolgreich' : `✗ ${r.error}`;
+  } catch (e) {
+    res.style.color = 'var(--red)';
+    res.textContent = `✗ ${e.message}`;
+  }
 });
 
 // ── Log settings save ─────────────────────────────────────────────────────────
