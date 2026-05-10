@@ -429,6 +429,18 @@
 // ── i18n ──────────────────────────────────────────────────────────────────────
 let strings = {};
 let currentLang = localStorage.getItem('nibepi-lang') || 'en';
+let alarmDescs = {};
+
+async function loadAlarmDescs() {
+  try {
+    const r = await fetch('/api/alarms');
+    if (r.ok) alarmDescs = await r.json();
+  } catch {}
+}
+
+function alarmDesc(code) {
+  return alarmDescs[String(code)] || '';
+}
 
 async function loadLang(code) {
   try {
@@ -582,11 +594,19 @@ function applyStatus(s) {
 
   const alarmActive = s.alarm && s.alarm !== 0;
   $('hdr-alarm').style.display = alarmActive ? '' : 'none';
-  if (alarmActive) $('hdr-alarm-text').textContent = t('hdr.alarm', s.alarm);
+  if (alarmActive) {
+    const desc = alarmDesc(s.alarm);
+    $('hdr-alarm-text').textContent = desc
+      ? t('hdr.alarm', s.alarm) + ' – ' + desc
+      : t('hdr.alarm', s.alarm);
+  }
   const alarmRow = $('alarm-row');
   alarmRow.style.display = alarmActive ? 'flex' : 'none';
   if (alarmActive) {
-    $('st-alarm').textContent = t('stat.alarmCode', s.alarm);
+    const desc = alarmDesc(s.alarm);
+    $('st-alarm').textContent = desc
+      ? t('stat.alarmCode', s.alarm) + ' – ' + desc
+      : t('stat.alarmCode', s.alarm);
     $('btn-alarm-reset').style.display = s.canReset ? '' : 'none';
     const hint = $('st-alarm-hint');
     if (s.isCommLoss) {
@@ -1101,7 +1121,7 @@ function renderCharts() {
 }
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
-loadLang(currentLang).then(() => { applyLang(); loadConfig(); openEvents(); openLogs(); });
+Promise.all([loadLang(currentLang), loadAlarmDescs()]).then(() => { applyLang(); loadConfig(); openEvents(); openLogs(); });
 </script>
 </body>
 </html>

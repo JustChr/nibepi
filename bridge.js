@@ -12,6 +12,7 @@ const { EventEmitter } = require('events');
 // ── Constants ─────────────────────────────────────────────────────────────────
 const CONFIG_FILE  = '/etc/nibepi/config.json';
 const MODELS_FILE  = path.join(__dirname, 'lib/models.json');
+const ALARMS_FILE  = path.join(__dirname, 'lib/alarms.json');
 const BACKEND_FILE = path.join(__dirname, 'backend.js');
 const UI_DIR       = path.join(__dirname, 'ui');
 const HTTP_PORT    = Number(process.env.PORT) || 1880;
@@ -664,7 +665,13 @@ const server = http.createServer(async (req, res) => {
 
     // ── REST API ──────────────────────────────────────────────────────────────
     try {
-        if (pathname === '/api/config' && req.method === 'GET') {
+        if (pathname === '/api/alarms' && req.method === 'GET') {
+            fs.readFile(ALARMS_FILE, (err, data) => {
+                if (err) respond(res, 404, { error: 'Alarm list not found' });
+                else { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(data); }
+            });
+
+        } else if (pathname === '/api/config' && req.method === 'GET') {
             respond(res, 200, config);
 
         } else if (pathname === '/api/config' && req.method === 'POST') {
