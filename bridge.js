@@ -234,6 +234,13 @@ function handleAnnouncement(buf) {
     broadcast('status', getStatus());
     log('info', `Pump: ${model} firmware ${pumpFirmware}`);
 
+    // Acknowledge any active Modbus alarm (raised during Pi boot gap).
+    // Register 45171 = alarm reset; value 1 = acknowledge.
+    if (core && core.connected) {
+        core.send({ type: 'setData', data: buildWriteFrame(45171, 1) });
+        log('info', 'Sent alarm acknowledge (register 45171).');
+    }
+
     // Enqueue all configured registers
     if (config.registers) {
         for (const addr of config.registers) addRegular(addr);
