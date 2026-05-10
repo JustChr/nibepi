@@ -350,22 +350,19 @@
   <div class="card">
     <h2>Logging</h2>
     <div class="toggle-row">
-      <label class="switch">
-        <input type="checkbox" id="log-enable">
-        <span class="slider"></span>
-      </label>
-      <label for="log-enable">Logging aktivieren</label>
+      <label for="log-level" style="margin-right:10px">Log-Level</label>
+      <select id="log-level" class="input-field" style="width:auto">
+        <option value="off">Off</option>
+        <option value="error">Error</option>
+        <option value="warn">Warn</option>
+        <option value="info">Info</option>
+        <option value="debug">Debug</option>
+      </select>
     </div>
-    <div class="toggle-row" style="margin-top:10px">
-      <label class="switch">
-        <input type="checkbox" id="log-debug">
-        <span class="slider"></span>
-      </label>
-      <label for="log-debug">Debug-Modus (viele Ausgaben!)</label>
-    </div>
-    <div class="btn-row">
+    <div class="btn-row" style="margin-top:10px">
       <button class="btn btn-ghost btn-sm" id="btn-save-log">Speichern</button>
       <button class="btn btn-ghost btn-sm" id="btn-log-clear">Log leeren</button>
+      <button class="btn btn-ghost btn-sm" id="btn-log-download">Download</button>
     </div>
   </div>
 
@@ -541,8 +538,11 @@ async function loadConfig() {
   $('mqtt-enable').checked   = !!m.enable;
   $('mqtt-discovery').checked = !!m.discovery;
   // Log settings
-  $('log-enable').checked    = !!(c.log && c.log.enable);
-  $('log-debug').checked     = !!(c.log && c.log.debug);
+  // Migrate old { enable, debug } format for display
+  const logCfg = c.log || {};
+  let logLvl = logCfg.level;
+  if (logLvl === undefined) logLvl = !logCfg.enable ? 'off' : logCfg.debug ? 'debug' : 'info';
+  $('log-level').value = logLvl || 'warn';
 }
 
 async function loadModelList(selectedPump) {
@@ -664,11 +664,22 @@ $('btn-test-mqtt').addEventListener('click', async () => {
 
 // ── Log settings save ─────────────────────────────────────────────────────────
 $('btn-save-log').addEventListener('click', async () => {
-  await api('POST', '/config', { log: { enable: $('log-enable').checked, debug: $('log-debug').checked } });
+  await api('POST', '/config', { log: { level: $('log-level').value } });
   showToast('Log-Einstellungen gespeichert.');
 });
 
-$('btn-log-clear').addEventListener('click', () => { $('log-view').innerHTML = ''; });
+$('btn-log-clear').addEventListener('click', async () => {
+  await api('POST', '/logs/clear');
+  $('log-view').innerHTML = '';
+});
+
+$('btn-log-download').addEventListener('click', () => {
+  const lines = Array.from($('log-view').children).map(el => el.textContent).join('\n');
+  const a = document.createElement('a');
+  a.href = 'data:text/plain;charset=utf-8,' + encodeURIComponent(lines);
+  a.download = 'nibepi-' + new Date().toISOString().slice(0,19).replace(/[:T]/g,'-') + '.log';
+  a.click();
+});
 
 // ── Registers ─────────────────────────────────────────────────────────────────
 let allRegs        = [];

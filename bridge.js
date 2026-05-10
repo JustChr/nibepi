@@ -43,7 +43,7 @@ const DEFAULT_CONFIG = {
     mqtt:       { enable: false, host: '127.0.0.1', port: '1883', user: '', pass: '',
                   topic: 'nibe/modbus/', discovery: false },
     system:     { readonly: true },
-    log:        { enable: false, debug: false, error: true },
+    log:        { level: 'warn' },
 };
 
 // ── Config ────────────────────────────────────────────────────────────────────
@@ -91,9 +91,20 @@ function persistConfig(cb) {
 const logBuffer     = [];
 const logSseClients = new Set();
 
+const LOG_LEVELS = { off: 0, error: 1, warn: 2, info: 3, debug: 4 };
+
+function logLevel() {
+    const cfg = config.log || {};
+    // Migrate old { enable, debug } format
+    if (cfg.level === undefined) {
+        if (!cfg.enable)  return 'off';
+        return cfg.debug  ? 'debug' : 'info';
+    }
+    return cfg.level;
+}
+
 function log(level, msg) {
-    const enabled = config.log && config.log.enable;
-    if (!enabled && level === 'debug') return;
+    if ((LOG_LEVELS[level] || 0) > (LOG_LEVELS[logLevel()] || 0)) return;
     const line = `[${new Date().toISOString()}] [${level.toUpperCase().padEnd(5)}] ${msg}`;
     console.log(line);
     logBuffer.push(line);
@@ -630,6 +641,10 @@ const server = http.createServer(async (req, res) => {
             config.registers = (config.registers || []).filter(r => Number(r) !== n);
             scheduleConfigSave();
             removeRegular(n);
+            respond(res, 200, { ok: true });
+
+        } else if (pathname === '/api/logs/clear' && req.method === 'POST') {
+            logBuffer.length = 0;
             respond(res, 200, { ok: true });
 
         } else if (pathname === '/api/status' && req.method === 'GET') {
