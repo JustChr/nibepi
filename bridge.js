@@ -133,8 +133,8 @@ function loadModel(pump) {
 
 // ── State ─────────────────────────────────────────────────────────────────────
 let core;
-let pumpModel     = '';
-let pumpFirmware  = '';
+let pumpModel     = (config.system && config.system.pump)     || '';
+let pumpFirmware  = (config.system && config.system.firmware) || '';
 let pumpConnected = false;
 let mqttClient;
 let mqttConnected = false;

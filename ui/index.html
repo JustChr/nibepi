@@ -811,7 +811,8 @@ function toggleChart(addr) {
       regColors[addr] = CHART_COLORS[chartColorIdx % CHART_COLORS.length];
       chartColorIdx++;
     }
-    recordedValues[addr] = [];
+    // Preserve ring-buffer history already received via SSE; only init if empty
+    if (!recordedValues[addr]) recordedValues[addr] = [];
   }
   // Refresh chart button state in table
   document.querySelectorAll('button[data-chart]').forEach(btn => {
@@ -826,27 +827,48 @@ function renderCharts() {
   if (chartedRegisters.size === 0) { panel.className = ''; panel.innerHTML = ''; return; }
   panel.className = 'visible';
 
-  const regs   = [...chartedRegisters];
-  const W      = 600;
-  const H      = 72;
-  const PAD_L  = 52;
-  const PAD_R  = 8;
-  const PAD_V  = 8;
-  const plotW  = W - PAD_L - PAD_R;
-  const plotH  = H - PAD_V * 2;
+  const regs  = [...chartedRegisters];
+  const W     = 600, H = 72, PAD_L = 52, PAD_R = 8, PAD_V = 8;
+  const plotW = W - PAD_L - PAD_R;
+  const plotH = H - PAD_V * 2;
+
+  // ── Shared time range across ALL charted registers ──────────────────────────
+  let gTmin = Infinity, gTmax = -Infinity;
+  for (const addr of regs) {
+    for (const p of (recordedValues[addr] || [])) {
+      if (p.t < gTmin) gTmin = p.t;
+      if (p.t > gTmax) gTmax = p.t;
+    }
+  }
+  if (!isFinite(gTmin)) gTmin = gTmax = Date.now();
+  const gRange = gTmax - gTmin || 1;
+
+  const fmtDur = ms => {
+    const s = Math.round(ms / 1000);
+    return s < 60 ? `${s}s` : s < 3600 ? `${Math.round(s / 60)}min` : `${(s / 3600).toFixed(1)}h`;
+  };
+  const toX = t => PAD_L + ((t - gTmin) / gRange) * plotW;
+
+  const ruler = `<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);padding:2px ${PAD_R}px 4px ${PAD_L}px">
+    <span>vor ${fmtDur(Date.now() - gTmin)}</span>
+    <span style="opacity:.5">↔ ${fmtDur(gTmax - gTmin)}</span>
+    <span>jetzt</span>
+  </div>`;
 
   const html = regs.map(addr => {
-    const pts    = recordedValues[addr] || [];
-    const reg    = allRegs.find(r => Number(r.register) === addr);
-    const title  = reg ? reg.titel : `#${addr}`;
-    const unit   = reg ? (reg.unit || '') : '';
-    const color  = regColors[addr] || '#4f8ef7';
+    const pts   = recordedValues[addr] || [];
+    const reg   = allRegs.find(r => Number(r.register) === addr);
+    const title = reg ? reg.titel : `#${addr}`;
+    const unit  = reg ? (reg.unit || '') : '';
+    const color = regColors[addr] || '#4f8ef7';
+    const closeBtn = `<button class="chart-btn" onclick="toggleChart(${addr})" title="Schließen">×</button>`;
 
     if (pts.length < 2) {
       return `<div class="sparkline-wrap">
         <div class="sparkline-header">
           <span class="sparkline-title" style="color:${color}">${escHtml(title)}</span>
           <span class="sparkline-meta">Warte auf Daten…</span>
+          ${closeBtn}
         </div>
       </div>`;
     }
@@ -856,17 +878,13 @@ function renderCharts() {
     const maxV  = Math.max(...vals);
     const range = maxV - minV || 1;
     const cur   = vals[vals.length - 1];
+    const toY   = v => PAD_V + plotH - ((v - minV) / range) * plotH;
 
-    // Map to SVG coords
-    const points = pts.map((p, i) => {
-      const x = PAD_L + (i / (pts.length - 1)) * plotW;
-      const y = PAD_V + plotH - ((p.v - minV) / range) * plotH;
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
-    }).join(' ');
-
-    // Gradient area fill
-    const areaPoints =
-      `${PAD_L},${H - PAD_V} ` + points + ` ${PAD_L + plotW},${H - PAD_V}`;
+    const points     = pts.map(p => `${toX(p.t).toFixed(1)},${toY(p.v).toFixed(1)}`).join(' ');
+    const firstX     = toX(pts[0].t).toFixed(1);
+    const lastX      = toX(pts[pts.length - 1].t).toFixed(1);
+    const lastY      = toY(cur).toFixed(1);
+    const areaPoints = `${firstX},${H - PAD_V} ${points} ${lastX},${H - PAD_V}`;
 
     const yTop = PAD_V + 4;
     const yBot = H - PAD_V - 2;
@@ -875,7 +893,8 @@ function renderCharts() {
     return `<div class="sparkline-wrap">
       <div class="sparkline-header">
         <span class="sparkline-title" style="color:${color}">${escHtml(title)}</span>
-        <span class="sparkline-meta">${cur} ${escHtml(unit)} &nbsp;·&nbsp; min ${minV} &nbsp;max ${maxV} &nbsp;·&nbsp; ${pts.length} Punkte</span>
+        <span class="sparkline-meta">${cur} ${escHtml(unit)} &nbsp;·&nbsp; ↓${minV} ↑${maxV} &nbsp;·&nbsp; ${pts.length} Punkte</span>
+        ${closeBtn}
       </div>
       <svg class="sparkline-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
         <defs>
@@ -884,25 +903,20 @@ function renderCharts() {
             <stop offset="100%" stop-color="${color}" stop-opacity="0.02"/>
           </linearGradient>
         </defs>
-        <!-- grid lines -->
         <line x1="${PAD_L}" y1="${yTop}" x2="${W - PAD_R}" y2="${yTop}" stroke="var(--border)" stroke-width="0.5"/>
-        <line x1="${PAD_L}" y1="${yMid.toFixed(1)}" x2="${W - PAD_R}" y2="${yMid.toFixed(1)}" stroke="var(--border)" stroke-width="0.5" stroke-dasharray="3,3"/>
+        <line x1="${PAD_L}" y1="${yMid}" x2="${W - PAD_R}" y2="${yMid}" stroke="var(--border)" stroke-width="0.5" stroke-dasharray="3,3"/>
         <line x1="${PAD_L}" y1="${yBot}" x2="${W - PAD_R}" y2="${yBot}" stroke="var(--border)" stroke-width="0.5"/>
-        <!-- Y axis labels -->
-        <text x="${PAD_L - 4}" y="${yTop + 3}"    text-anchor="end" font-size="9" fill="var(--muted)">${maxV}</text>
-        <text x="${PAD_L - 4}" y="${yMid.toFixed(1) + 3}" text-anchor="end" font-size="9" fill="var(--muted)">${((minV + maxV) / 2).toFixed(1)}</text>
-        <text x="${PAD_L - 4}" y="${yBot + 3}"    text-anchor="end" font-size="9" fill="var(--muted)">${minV}</text>
-        <!-- area fill -->
+        <text x="${PAD_L - 4}" y="${yTop + 3}" text-anchor="end" font-size="9" fill="var(--muted)">${maxV}</text>
+        <text x="${PAD_L - 4}" y="${yMid + 3}" text-anchor="end" font-size="9" fill="var(--muted)">${((minV + maxV) / 2).toFixed(1)}</text>
+        <text x="${PAD_L - 4}" y="${yBot + 3}" text-anchor="end" font-size="9" fill="var(--muted)">${minV}</text>
         <polygon points="${areaPoints}" fill="url(#sg${addr})"/>
-        <!-- line -->
         <polyline points="${points}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>
-        <!-- current value dot -->
-        <circle cx="${(PAD_L + plotW).toFixed(1)}" cy="${(PAD_V + plotH - ((cur - minV) / range) * plotH).toFixed(1)}" r="2.5" fill="${color}"/>
+        <circle cx="${lastX}" cy="${lastY}" r="2.5" fill="${color}"/>
       </svg>
     </div>`;
   }).join('');
 
-  panel.innerHTML = html;
+  panel.innerHTML = ruler + html;
 }
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
