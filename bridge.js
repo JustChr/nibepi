@@ -154,10 +154,11 @@ function loadModel(pump) {
 let core;
 let pumpModel     = (config.system && config.system.pump)     || '';
 let pumpFirmware  = (config.system && config.system.firmware) || '';
-let pumpConnected  = false;
-let alarmRegAddr   = null;
-let alarmResetAddr = null;
-let alarmValue     = 0;
+let pumpConnected     = false;
+let alarmRegAddr      = null;
+let alarmResetAddr    = null;
+let alarmValue        = 0;
+let pendingAlarmReset = false;
 let mqttClient;
 let mqttConnected = false;
 let mqttDiscovered = new Set();
@@ -245,7 +246,12 @@ function handleAnnouncement(buf) {
     if (pumpModel) {
         if (!pumpConnected) {
             pumpConnected = true;
+            pendingAlarmReset = true;
             broadcast('status', getStatus());
+            // Re-send full register queue to the new backend process
+            if (core && core.connected && regQueue.length > 0) {
+                core.send({ type: 'regRegister', data: regQueue });
+            }
         }
         return;
     }
@@ -267,13 +273,7 @@ function handleAnnouncement(buf) {
     broadcast('status', getStatus());
     log('info', `Pump: ${model} firmware ${pumpFirmware}`);
 
-    // Acknowledge any Modbus alarm raised during the Pi boot gap.
-    // Register 22 is required for alarm 251 (comm loss); alarmResetAddr covers other alarms.
-    if (core && core.connected) {
-        core.send({ type: 'setData', data: buildWriteFrame(ALARM_251_RESET_REG, 1) });
-        if (alarmResetAddr) core.send({ type: 'setData', data: buildWriteFrame(alarmResetAddr, 1) });
-        log('info', `Auto-acknowledged alarm on connect (reg ${ALARM_251_RESET_REG}${alarmResetAddr ? ', ' + alarmResetAddr : ''}).`);
-    }
+    pendingAlarmReset = true;
 
     // Enqueue all configured registers + alarm register
     if (config.registers) {
@@ -288,6 +288,16 @@ function handleFrame(buf, rmuFlag) {
     if (buf[3] === 109) { handleAnnouncement(buf); return; }
     if (!pumpModel) return;
     if (buf[3] !== 104 && buf[3] !== 106 && buf[3] !== 98 && buf[3] !== 96) return;
+
+    // Deferred alarm reset — sent once after the first real data frame
+    if (pendingAlarmReset) {
+        pendingAlarmReset = false;
+        if (core && core.connected) {
+            core.send({ type: 'setData', data: buildWriteFrame(ALARM_251_RESET_REG, 1) });
+            if (alarmResetAddr) core.send({ type: 'setData', data: buildWriteFrame(alarmResetAddr, 1) });
+            log('info', `Deferred alarm reset sent after first data frame (reg ${ALARM_251_RESET_REG}${alarmResetAddr ? ', ' + alarmResetAddr : ''}).`);
+        }
+    }
 
     const timeNow = Date.now();
 
@@ -346,11 +356,11 @@ function handleFrame(buf, rmuFlag) {
         broadcast('value', { register: address, value: scaled, unit: reg.unit, titel: reg.titel });
 
         if (address === alarmRegAddr) {
-            const wasActive = alarmValue !== 0;
+            const prev = alarmValue;
             alarmValue = scaled;
-            if ((alarmValue !== 0) !== wasActive) broadcast('status', getStatus());
-            // Alarm 251 = comm loss; reg 22 must be written to clear it
-            if (alarmValue === 251 && core && core.connected) {
+            if ((alarmValue !== 0) !== (prev !== 0)) broadcast('status', getStatus());
+            // Send comm-loss reset only when alarm first becomes 251 (not every poll)
+            if (alarmValue === 251 && prev !== 251 && core && core.connected) {
                 core.send({ type: 'setData', data: buildWriteFrame(ALARM_251_RESET_REG, 1) });
                 log('info', 'Alarm 251 detected — sent comm-loss reset (reg 22).');
             }
@@ -364,9 +374,10 @@ function handleFrame(buf, rmuFlag) {
         log('debug', `${address} (${reg.titel}): ${scaled} ${reg.unit}`);
     }
 
-    // After first full data frame, push register queue
-    if (regQueue.length === 0 && buf[3] === 104 && config.registers) {
-        for (const addr of config.registers) addRegular(addr);
+    // After first full data frame, push register queue if it was empty
+    if (regQueue.length === 0 && buf[3] === 104) {
+        if (config.registers) for (const addr of config.registers) addRegular(addr);
+        if (alarmRegAddr) addRegular(alarmRegAddr);
     }
 }
 
