@@ -92,5 +92,5 @@
   "stat.alarmCode": "⚠ Alarm code: {0}",
   "stat.alarmReset": "Reset Alarm",
   "stat.alarmResetConfirm": "Reset the active alarm?",
-  "stat.alarmCommLossHint": "Alarm 251 (comm loss) — auto-reset is retrying every 10 s. If it persists, acknowledge on the pump display."
+  "stat.alarmCommLossHint": "Alarm 251 cannot be reset remotely. Please acknowledge it on the pump display."
 }

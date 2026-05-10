@@ -382,8 +382,12 @@ function handleFrame(buf, rmuFlag) {
             if ((alarmValue !== 0) !== (prev !== 0)) {
                 broadcast('status', getStatus());
                 if (alarmValue !== 0) {
-                    log('warn', `Alarm ${alarmValue} active — starting reset retry.`);
-                    startAlarmReset();
+                    if (alarmValue !== 251) {
+                        log('warn', `Alarm ${alarmValue} active — starting reset retry.`);
+                        startAlarmReset();
+                    } else {
+                        log('warn', 'Alarm 251 (comm loss) active — requires physical display acknowledgment.');
+                    }
                 } else {
                     log('info', `Alarm cleared (was ${prev}).`);
                     stopAlarmReset();
@@ -597,7 +601,7 @@ function getStatus() {
         readonly:     !!(config.system && config.system.readonly),
         version:      VERSION,
         alarm:        alarmValue,
-        canReset:     alarmResetAddr !== null,
+        canReset:     alarmResetAddr !== null && alarmValue !== 251,
         isCommLoss:   alarmValue === 251,
     };
 }
@@ -716,7 +720,7 @@ const server = http.createServer(async (req, res) => {
             if (!core || !core.connected) {
                 respond(res, 409, { error: 'Pump not connected' }); return;
             }
-            if (!alarmResetAddr) {
+            if (!alarmResetAddr || alarmValue === 251) {
                 respond(res, 409, { error: 'No alarm reset register available' }); return;
             }
             core.send({ type: 'setData', data: buildWriteFrame(alarmResetAddr, 1) });

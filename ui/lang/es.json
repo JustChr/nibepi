@@ -92,5 +92,5 @@
   "stat.alarmCode": "⚠ Código alarma: {0}",
   "stat.alarmReset": "Resetear alarma",
   "stat.alarmResetConfirm": "¿Resetear la alarma activa?",
-  "stat.alarmCommLossHint": "Alarma 251 (pérdida de comunicación) — reintentando reinicio cada 10 s. Si persiste, confirmar en la pantalla de la bomba."
+  "stat.alarmCommLossHint": "La alarma 251 no se puede restablecer remotamente. Confirme en la pantalla de la bomba."
 }

@@ -92,5 +92,5 @@
   "stat.alarmCode": "⚠ Codice allarme: {0}",
   "stat.alarmReset": "Reset allarme",
   "stat.alarmResetConfirm": "Resettare l allarme attivo?",
-  "stat.alarmCommLossHint": "Allarme 251 (perdita di comunicazione) — ripristino automatico ogni 10 s. Se persiste, confermare sul display della pompa."
+  "stat.alarmCommLossHint": "L'allarme 251 non può essere resettato da remoto. Confermarlo sul display della pompa."
 }

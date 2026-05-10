@@ -92,5 +92,5 @@
   "stat.alarmCode": "⚠ Cod alarmă: {0}",
   "stat.alarmReset": "Resetare alarmă",
   "stat.alarmResetConfirm": "Resetați alarma activă?",
-  "stat.alarmCommLossHint": "Alarma 251 (pierdere comunicare) — resetare automată la 10 s. Dacă persistă, confirmați pe display-ul pompei."
+  "stat.alarmCommLossHint": "Alarma 251 nu poate fi resetată de la distanță. Confirmați-o pe display-ul pompei."
 }
