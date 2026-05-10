@@ -559,7 +559,10 @@ const server = http.createServer(async (req, res) => {
         if (!filePath.startsWith(UI_DIR)) { res.writeHead(403); res.end(); return; }
         fs.readFile(filePath, (err, data) => {
             if (err) { res.writeHead(404); res.end('Not found'); return; }
-            res.writeHead(200, { 'Content-Type': MIME[path.extname(filePath)] || 'application/octet-stream' });
+            const ct = MIME[path.extname(filePath)] || 'application/octet-stream';
+            const headers = { 'Content-Type': ct };
+            if (ct === 'text/html') headers['Cache-Control'] = 'no-store';
+            res.writeHead(200, headers);
             res.end(data);
         });
         return;
@@ -750,6 +753,7 @@ const server = http.createServer(async (req, res) => {
                 'cp "$D/bridge.js"    /opt/nibepi/bridge.js',
                 'cp "$D/backend.js"   /opt/nibepi/backend.js',
                 'cp "$D/package.json" /opt/nibepi/package.json',
+                'rm -rf /opt/nibepi/ui /opt/nibepi/lib /opt/nibepi/models',
                 'cp -r "$D/ui"        /opt/nibepi/ui',
                 'cp -r "$D/lib"       /opt/nibepi/lib',
                 'cp -r "$D/models"    /opt/nibepi/models',
