@@ -137,7 +137,12 @@ function loadModel(pump) {
         allRegisters = JSON.parse(fs.readFileSync(modelFile, 'utf8'));
         regMap = {};
         for (const r of allRegisters) regMap[Number(r.register)] = r;
-        log('info', `Model ${pump} loaded: ${allRegisters.length} registers.`);
+        const alarmReg   = allRegisters.find(r => r.titel === 'Alarm'       || r.titel === 'A-larm');
+        const alarmRstReg = allRegisters.find(r => r.titel === 'Alarm Reset');
+        alarmRegAddr     = alarmReg    ? Number(alarmReg.register)    : null;
+        alarmResetAddr   = alarmRstReg ? Number(alarmRstReg.register) : null;
+        alarmValue = 0;
+        log('info', `Model ${pump} loaded: ${allRegisters.length} registers${alarmRegAddr ? `, alarm register ${alarmRegAddr}` : ''}.`);
     } catch(e) {
         log('error', `Failed to load model ${pump}: ${e.message}`);
     }
@@ -147,7 +152,10 @@ function loadModel(pump) {
 let core;
 let pumpModel     = (config.system && config.system.pump)     || '';
 let pumpFirmware  = (config.system && config.system.firmware) || '';
-let pumpConnected = false;
+let pumpConnected  = false;
+let alarmRegAddr   = null;
+let alarmResetAddr = null;
+let alarmValue     = 0;
 let mqttClient;
 let mqttConnected = false;
 let mqttDiscovered = new Set();
@@ -257,17 +265,17 @@ function handleAnnouncement(buf) {
     broadcast('status', getStatus());
     log('info', `Pump: ${model} firmware ${pumpFirmware}`);
 
-    // Acknowledge any active Modbus alarm (raised during Pi boot gap).
-    // Register 45171 = alarm reset; value 1 = acknowledge.
-    if (core && core.connected) {
-        core.send({ type: 'setData', data: buildWriteFrame(45171, 1) });
-        log('info', 'Sent alarm acknowledge (register 45171).');
+    // Acknowledge any Modbus alarm raised during the Pi boot gap
+    if (alarmResetAddr && core && core.connected) {
+        core.send({ type: 'setData', data: buildWriteFrame(alarmResetAddr, 1) });
+        log('info', `Auto-acknowledged alarm on connect (register ${alarmResetAddr}).`);
     }
 
-    // Enqueue all configured registers
+    // Enqueue all configured registers + alarm register
     if (config.registers) {
         for (const addr of config.registers) addRegular(addr);
     }
+    if (alarmRegAddr) addRegular(alarmRegAddr);
 }
 
 // ── F-series frame decoder (ported from index.js decodeMessage) ───────────────
@@ -332,6 +340,12 @@ function handleFrame(buf, rmuFlag) {
         publishMqtt(topic + '/raw', String(scaled));
 
         broadcast('value', { register: address, value: scaled, unit: reg.unit, titel: reg.titel });
+
+        if (address === alarmRegAddr) {
+            const wasActive = alarmValue !== 0;
+            alarmValue = scaled;
+            if ((alarmValue !== 0) !== wasActive) broadcast('status', getStatus());
+        }
 
         const inConfig = (config.registers || []).some(r => Number(r) === address);
         if (config.mqtt && config.mqtt.discovery && inConfig && !mqttDiscovered.has(address)) {
@@ -537,6 +551,8 @@ function getStatus() {
         mqttConnected,
         readonly:     !!(config.system && config.system.readonly),
         version:      VERSION,
+        alarm:        alarmValue,
+        canReset:     alarmResetAddr !== null,
     };
 }
 
@@ -642,6 +658,14 @@ const server = http.createServer(async (req, res) => {
             config.registers = (config.registers || []).filter(r => Number(r) !== n);
             scheduleConfigSave();
             removeRegular(n);
+            respond(res, 200, { ok: true });
+
+        } else if (pathname === '/api/alarm/reset' && req.method === 'POST') {
+            if (!alarmResetAddr || !core || !core.connected) {
+                respond(res, 409, { error: 'Alarm reset not available' }); return;
+            }
+            core.send({ type: 'setData', data: buildWriteFrame(alarmResetAddr, 1) });
+            log('info', `Alarm reset sent (register ${alarmResetAddr}).`);
             respond(res, 200, { ok: true });
 
         } else if (pathname === '/api/logs/clear' && req.method === 'POST') {

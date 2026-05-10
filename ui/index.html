@@ -189,6 +189,7 @@
   <h1>NibePi</h1>
   <span id="hdr-pump" class="badge"><span class="dot"></span><span id="hdr-pump-text"></span></span>
   <span id="hdr-mqtt" class="badge"><span class="dot"></span><span id="hdr-mqtt-text"></span></span>
+  <span id="hdr-alarm" class="badge err" style="display:none"><span class="dot"></span><span id="hdr-alarm-text"></span></span>
   <span id="hdr-model" class="badge" style="display:none"></span>
   <span id="hdr-version" class="badge" style="margin-left:auto;cursor:default"></span>
 </header>
@@ -350,6 +351,10 @@
         <div class="label" data-i18n="stat.fs"></div>
         <div class="value" id="st-fs">—</div>
       </div>
+    </div>
+    <div id="alarm-row" style="display:none;margin-top:14px;align-items:center;gap:12px;flex-wrap:wrap">
+      <span id="st-alarm" class="fs-badge ro"></span>
+      <button class="btn btn-danger" id="btn-alarm-reset" data-i18n="stat.alarmReset"></button>
     </div>
   </div>
 
@@ -573,6 +578,16 @@ function applyStatus(s) {
   const fsEl = $('st-fs');
   fsEl.textContent = t(s.readonly ? 'stat.readonly' : 'stat.writable');
   fsEl.className   = 'value ' + (s.readonly ? 'muted' : 'green');
+
+  const alarmActive = s.alarm && s.alarm !== 0;
+  $('hdr-alarm').style.display = alarmActive ? '' : 'none';
+  if (alarmActive) $('hdr-alarm-text').textContent = t('hdr.alarm', s.alarm);
+  const alarmRow = $('alarm-row');
+  alarmRow.style.display = alarmActive ? 'flex' : 'none';
+  if (alarmActive) {
+    $('st-alarm').textContent = t('stat.alarmCode', s.alarm);
+    $('btn-alarm-reset').style.display = s.canReset ? '' : 'none';
+  }
 
   if (firstStatus) {
     firstStatus = false;
@@ -865,6 +880,12 @@ $('btn-fs-rw').addEventListener('click', async () => {
 $('btn-fs-ro').addEventListener('click', async () => {
   const r = await api('POST', '/fsmode', { readonly: true });
   if (r.ok) applyFsStatus(true);
+});
+
+// ── Alarm reset ───────────────────────────────────────────────────────────────
+$('btn-alarm-reset').addEventListener('click', async () => {
+  if (!confirm(t('stat.alarmResetConfirm'))) return;
+  await api('POST', '/alarm/reset');
 });
 
 // ── Restart ───────────────────────────────────────────────────────────────────
