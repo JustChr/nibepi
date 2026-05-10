@@ -691,9 +691,12 @@ const server = http.createServer(async (req, res) => {
                 'cp -r "$D/lib"       /opt/nibepi/lib',
                 'cp -r "$D/models"    /opt/nibepi/models',
                 'sudo cp "$D/patches/bridge.service" /etc/systemd/system/bridge.service',
+                // Cleanup steps are best-effort — don't let them abort before the restart
+                'set +e',
                 'sudo systemctl daemon-reload',
                 'sudo mount -o remount,ro /',
                 'rm -rf /tmp/nibepi-ota /tmp/nibepi-ota.tar.gz',
+                'set -e',
                 'sudo systemctl restart bridge',
             ].join('\n');
             try { fs.unlinkSync('/tmp/nibepi-ota.sh'); } catch(e) {}
