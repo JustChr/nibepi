@@ -992,7 +992,7 @@ $('btn-ver-install').addEventListener('click', async () => {
 });
 
 // ── Chart ─────────────────────────────────────────────────────────────────────
-const MAX_HISTORY      = 200;
+const MAX_HISTORY      = 360;  // matches backend RING_SIZE (1 h at 10 s)
 const chartedRegisters = new Set();
 const recordedValues   = {};
 const CHART_COLORS     = ['#4f8ef7','#3ecf8e','#f7c948','#f75f5f','#a78bfa','#f97316','#06b6d4','#84cc16'];
@@ -1009,19 +1009,29 @@ function scheduleChartRender() {
 function toggleChart(addr) {
   if (chartedRegisters.has(addr)) {
     chartedRegisters.delete(addr);
-  } else {
-    chartedRegisters.add(addr);
-    if (!regColors[addr]) {
-      regColors[addr] = CHART_COLORS[chartColorIdx % CHART_COLORS.length];
-      chartColorIdx++;
-    }
-    if (!recordedValues[addr]) recordedValues[addr] = [];
+    document.querySelectorAll('button[data-chart]').forEach(btn => {
+      btn.classList.toggle('active', chartedRegisters.has(Number(btn.dataset.chart)));
+    });
+    renderCharts();
+    return;
+  }
+  chartedRegisters.add(addr);
+  if (!regColors[addr]) {
+    regColors[addr] = CHART_COLORS[chartColorIdx % CHART_COLORS.length];
+    chartColorIdx++;
   }
   document.querySelectorAll('button[data-chart]').forEach(btn => {
-    const a = Number(btn.dataset.chart);
-    btn.classList.toggle('active', chartedRegisters.has(a));
+    btn.classList.toggle('active', chartedRegisters.has(Number(btn.dataset.chart)));
   });
-  renderCharts();
+  // Always fetch fresh ring-buffer history from the server when opening a chart
+  fetch('/api/history/' + addr)
+    .then(r => r.json())
+    .then(pts => {
+      if (pts.length > 0) recordedValues[addr] = pts;
+      else if (!recordedValues[addr]) recordedValues[addr] = [];
+      renderCharts();
+    })
+    .catch(() => { if (!recordedValues[addr]) recordedValues[addr] = []; renderCharts(); });
 }
 
 function renderCharts() {

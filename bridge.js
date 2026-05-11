@@ -669,7 +669,11 @@ const server = http.createServer(async (req, res) => {
 
     // ── REST API ──────────────────────────────────────────────────────────────
     try {
-        if (pathname === '/api/alarms' && req.method === 'GET') {
+        if (pathname.startsWith('/api/history/') && req.method === 'GET') {
+            const addr = Number(pathname.slice('/api/history/'.length));
+            respond(res, 200, ringBuffer[addr] || []);
+
+        } else if (pathname === '/api/alarms' && req.method === 'GET') {
             fs.readFile(ALARMS_FILE, (err, data) => {
                 if (err) respond(res, 404, { error: 'Alarm list not found' });
                 else { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(data); }
