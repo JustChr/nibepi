@@ -398,14 +398,14 @@ function handleFrame(buf, rmuFlag) {
 
             if (alarmValue === 251 && prev !== 251) {
                 log('warn', 'Alarm 251 (COM error Modbus 40) active — pausing register polling, starting auto-reset sequence.');
-                log('info', `Poll queue cleared (was ${regQueue.length} register(s)). Alarm updates via pump broadcasts.`);
+                log('info', `Poll queue reduced to alarm reg only (was ${regQueue.length} register(s)). Polling alarm reg for clear detection.`);
                 regPollingPaused = true;
-                if (core && core.connected) core.send({ type: 'regRegister', data: [] });
+                if (core && core.connected) core.send({ type: 'regRegister', data: [buildReadFrame(alarmRegAddr)] });
                 cancelAlarmReset();
                 broadcast('status', getStatus());
                 doAlarmResetAttempt();
             } else if (alarmValue === 251 && prev === 251) {
-                // Value unchanged in broadcast — no action needed, 30 s cooldown is already running
+                // Still alarming — 30 s cooldown already running, alarm reg polled explicitly
             } else if (prev === 251 && alarmValue !== 251) {
                 log('info', `Alarm 251 cleared — reg ${alarmRegAddr} now ${alarmValue}. Restoring full poll queue.`);
                 regPollingPaused = false;
