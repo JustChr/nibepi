@@ -159,7 +159,7 @@ let alarmResetAddr    = null;
 let alarmValue           = 0;
 let alarmResetAttempts   = 0;    // writes fired (0–4)
 let alarmResetGivenUp    = false;
-let alarmResetCooldown   = null; // setTimeout handle
+let alarmResetCooldown   = null; // setTimeout handle for 30 s retry window
 let regPollingPaused     = false;
 let mqttClient;
 let mqttConnected = false;
@@ -171,7 +171,7 @@ function doAlarmResetAttempt() {
     if (alarmResetAttempts >= 4) {
         alarmResetGivenUp = true;
         broadcast('status', getStatus());
-        log('warn', 'Alarm 251 reset: gave up after 4 attempts without success.');
+        log('warn', 'Alarm 251 reset: gave up after 4 attempts. Monitoring broadcasts for manual clear.');
         return;
     }
     alarmResetAttempts++;
@@ -179,6 +179,7 @@ function doAlarmResetAttempt() {
     core.send({ type: 'setData', data: frame });
     log('warn', `Alarm 251 reset attempt ${alarmResetAttempts}/4 — writing 1 to reg ${alarmResetAddr}.`);
     log('info', `Alarm 251 reset frame: [${frame.map(b => '0x' + b.toString(16).padStart(2,'0')).join(' ')}]`);
+    log('info', `[alarm-251] Alarm register updates will arrive via pump broadcasts (~1 s each); cooldown 30 s before next attempt.`);
     broadcast('status', getStatus());
     alarmResetCooldown = setTimeout(() => {
         alarmResetCooldown = null;
@@ -254,7 +255,7 @@ function spawnBackend() {
     core.on('message', onBackendMessage);
     core.on('exit', code => {
         log('warn', `Backend exited (code ${code}), restarting in 5s`);
-        pumpConnected = false;
+        pumpConnected    = false;
         regPollingPaused = false;
         cancelAlarmReset();
         broadcast('status', getStatus());
@@ -389,19 +390,22 @@ function handleFrame(buf, rmuFlag) {
         if (address === alarmRegAddr) {
             const prev = alarmValue;
             alarmValue = scaled;
-            log('info', `Alarm reg ${alarmRegAddr}: value=${scaled}${scaled !== prev ? ` (was ${prev})` : ' (unchanged)'}.`);
+            if (scaled !== prev) {
+                log('info', `Alarm reg ${alarmRegAddr}: value changed ${prev} → ${scaled}.`);
+            } else {
+                log('debug', `Alarm reg ${alarmRegAddr}: ${scaled} (unchanged, broadcast).`);
+            }
 
             if (alarmValue === 251 && prev !== 251) {
                 log('warn', 'Alarm 251 (COM error Modbus 40) active — pausing register polling, starting auto-reset sequence.');
-                log('info', `Reducing poll queue to alarm register ${alarmRegAddr} only (was ${regQueue.length} entries).`);
+                log('info', `Poll queue cleared (was ${regQueue.length} register(s)). Alarm updates via pump broadcasts.`);
                 regPollingPaused = true;
+                if (core && core.connected) core.send({ type: 'regRegister', data: [] });
                 cancelAlarmReset();
-                if (core && core.connected) {
-                    core.send({ type: 'regRegister', data: [buildReadFrame(alarmRegAddr)] });
-                    log('info', `Sent reduced regQueue to backend (alarm register ${alarmRegAddr} only).`);
-                }
                 broadcast('status', getStatus());
                 doAlarmResetAttempt();
+            } else if (alarmValue === 251 && prev === 251) {
+                // Value unchanged in broadcast — no action needed, 30 s cooldown is already running
             } else if (prev === 251 && alarmValue !== 251) {
                 log('info', `Alarm 251 cleared — reg ${alarmRegAddr} now ${alarmValue}. Restoring full poll queue.`);
                 regPollingPaused = false;
@@ -630,6 +634,8 @@ function getStatus() {
         alarmResetAttempts,
         alarmResetGivenUp,
         alarmResetInProgress: alarmResetCooldown !== null,
+        updateAvailable:      !!(_cachedRelease && _cachedRelease.newer),
+        latestVersion:        (_cachedRelease && _cachedRelease.newer) ? _cachedRelease.latest : null,
     };
 }
 
@@ -992,6 +998,10 @@ if (process.env.SKIP_SERIAL) {
 } else if (config.connection && config.connection.enable === 'serial') {
     spawnBackend();
 }
+
+// Proactive update check: once 30 s after startup, then every 24 h
+setTimeout(() => checkLatestRelease(err => { if (!err) broadcast('status', getStatus()); }), 30_000);
+setInterval(() => checkLatestRelease(err => { if (!err) broadcast('status', getStatus()); }), 86_400_000);
 
 process.on('uncaughtException',  err => log('error', `Uncaught: ${err.message}`));
 process.on('unhandledRejection', err => log('error', `Unhandled: ${err}`));

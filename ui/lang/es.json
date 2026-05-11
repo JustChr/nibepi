@@ -89,6 +89,7 @@
   "toast.mqtt": "Configuración MQTT guardada.",
   "toast.log": "Configuración de log guardada.",
   "hdr.alarm": "⚠ Alarma {0}",
+  "hdr.updateAvailable": "↑ v{0} disponible",
   "stat.alarmCode": "⚠ Código alarma: {0}",
   "stat.alarmReset": "Resetear alarma",
   "stat.alarmResetConfirm": "¿Resetear la alarma activa?",

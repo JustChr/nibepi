@@ -89,6 +89,7 @@
   "toast.mqtt": "Ρυθμίσεις MQTT αποθηκεύτηκαν.",
   "toast.log": "Ρυθμίσεις καταγραφής αποθηκεύτηκαν.",
   "hdr.alarm": "⚠ Συναγερμός {0}",
+  "hdr.updateAvailable": "↑ v{0} διαθέσιμη",
   "stat.alarmCode": "⚠ Κωδικός συναγερμού: {0}",
   "stat.alarmReset": "Επαναφορά συναγερμού",
   "stat.alarmResetConfirm": "Επαναφορά του ενεργού συναγερμού;",

@@ -89,6 +89,7 @@
   "toast.mqtt": "Setări MQTT salvate.",
   "toast.log": "Setări jurnal salvate.",
   "hdr.alarm": "⚠ Alarmă {0}",
+  "hdr.updateAvailable": "↑ v{0} disponibilă",
   "stat.alarmCode": "⚠ Cod alarmă: {0}",
   "stat.alarmReset": "Resetare alarmă",
   "stat.alarmResetConfirm": "Resetați alarma activă?",

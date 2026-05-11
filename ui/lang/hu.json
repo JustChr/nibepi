@@ -89,6 +89,7 @@
   "toast.mqtt": "MQTT beállítások elmentve.",
   "toast.log": "Napló beállítások elmentve.",
   "hdr.alarm": "⚠ Riasztás {0}",
+  "hdr.updateAvailable": "↑ v{0} elérhető",
   "stat.alarmCode": "⚠ Riasztáskód: {0}",
   "stat.alarmReset": "Riasztás visszaállítása",
   "stat.alarmResetConfirm": "Visszaállítja az aktív riasztást?",

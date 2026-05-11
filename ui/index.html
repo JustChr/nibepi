@@ -192,6 +192,7 @@
   <span id="hdr-alarm" class="badge err" style="display:none"><span class="dot"></span><span id="hdr-alarm-text"></span></span>
   <span id="hdr-model" class="badge" style="display:none"></span>
   <span id="hdr-version" class="badge" style="margin-left:auto;cursor:default"></span>
+  <span id="hdr-update" class="badge warn" style="display:none;cursor:pointer" title=""><span class="dot"></span><span id="hdr-update-text"></span></span>
 </header>
 
 <nav>
@@ -370,32 +371,6 @@
   </div>
 
   <div class="card">
-    <h2 data-i18n="log.title"></h2>
-    <div class="toggle-row">
-      <label for="log-level" style="margin-right:10px" data-i18n="log.level"></label>
-      <select id="log-level" class="input-field" style="width:auto">
-        <option value="off">Off</option>
-        <option value="error">Error</option>
-        <option value="warn">Warn</option>
-        <option value="info">Info</option>
-        <option value="debug">Debug</option>
-      </select>
-    </div>
-    <div class="btn-row" style="margin-top:10px">
-      <button class="btn btn-ghost btn-sm" id="btn-save-log"      data-i18n="log.save"></button>
-      <button class="btn btn-ghost btn-sm" id="btn-log-clear"     data-i18n="log.clear"></button>
-      <button class="btn btn-ghost btn-sm" id="btn-log-download"  data-i18n="log.download"></button>
-    </div>
-  </div>
-
-  <div class="card">
-    <h2 data-i18n="log.liveTitle"></h2>
-    <div id="log-view"></div>
-  </div>
-
-  <hr class="section-sep">
-
-  <div class="card">
     <h2 data-i18n="sw.title"></h2>
     <div class="status-grid" style="margin-bottom:14px">
       <div class="stat-card">
@@ -420,6 +395,32 @@
     <h2 data-i18n="rst.title"></h2>
     <p id="rst-desc" style="color:var(--muted);font-size:13px;margin-bottom:14px"></p>
     <button class="btn btn-danger" id="btn-restart" data-i18n="rst.btn"></button>
+  </div>
+
+  <hr class="section-sep">
+
+  <div class="card">
+    <h2 data-i18n="log.title"></h2>
+    <div class="toggle-row">
+      <label for="log-level" style="margin-right:10px" data-i18n="log.level"></label>
+      <select id="log-level" class="input-field" style="width:auto">
+        <option value="off">Off</option>
+        <option value="error">Error</option>
+        <option value="warn">Warn</option>
+        <option value="info">Info</option>
+        <option value="debug">Debug</option>
+      </select>
+    </div>
+    <div class="btn-row" style="margin-top:10px">
+      <button class="btn btn-ghost btn-sm" id="btn-save-log"      data-i18n="log.save"></button>
+      <button class="btn btn-ghost btn-sm" id="btn-log-clear"     data-i18n="log.clear"></button>
+      <button class="btn btn-ghost btn-sm" id="btn-log-download"  data-i18n="log.download"></button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2 data-i18n="log.liveTitle"></h2>
+    <div id="log-view"></div>
   </div>
 
 </div>
@@ -580,6 +581,16 @@ function applyStatus(s) {
     vb.style.display = '';
     const cur = $('st-ver-current');
     if (cur) cur.textContent = `v${s.version}`;
+  }
+
+  const updateBadge = $('hdr-update');
+  if (s.updateAvailable && s.latestVersion) {
+    $('hdr-update-text').textContent = t('hdr.updateAvailable', s.latestVersion);
+    updateBadge.title = t('hdr.updateAvailable', s.latestVersion);
+    updateBadge.style.display = '';
+    updateBadge.onclick = () => switchTab('tab-status');
+  } else {
+    updateBadge.style.display = 'none';
   }
 
   $('st-pump').textContent = s.connected ? (s.model || t('hdr.pumpOk')) : t('hdr.pumpErr');
