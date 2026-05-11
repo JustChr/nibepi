@@ -92,5 +92,8 @@
   "stat.alarmCode": "⚠ Riasztáskód: {0}",
   "stat.alarmReset": "Riasztás visszaállítása",
   "stat.alarmResetConfirm": "Visszaállítja az aktív riasztást?",
-  "stat.alarmCommLossHint": "A 251-es riasztás távolról nem állítható vissza. Nyugtázza a szivattyú kijelzőjén."
+  "stat.alarmCommLossHint": "A 251-es riasztás távolról nem állítható vissza. Nyugtázza a szivattyú kijelzőjén.",
+  "stat.alarmResetting": "Visszaállítás folyamatban ({0}/4)…",
+  "stat.alarmResetWaiting": "{0}/4. kísérlet elküldve — 30 s várakozás a riasztás törlésére…",
+  "stat.alarmResetGivenUp": "4 kísérlet után feladva — kattintson az újrakezdéshez."
 }

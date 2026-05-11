@@ -92,5 +92,8 @@
   "stat.alarmCode": "⚠ Alarmcode: {0}",
   "stat.alarmReset": "Alarm resetten",
   "stat.alarmResetConfirm": "Actief alarm resetten?",
-  "stat.alarmCommLossHint": "Alarm 251 kan niet op afstand worden gereset. Bevestig dit op het pompscherm."
+  "stat.alarmCommLossHint": "Alarm 251 kan niet op afstand worden gereset. Bevestig dit op het pompscherm.",
+  "stat.alarmResetting": "Bezig met resetten ({0}/4)…",
+  "stat.alarmResetWaiting": "Poging {0}/4 verzonden — 30 s wachten tot alarm gewist…",
+  "stat.alarmResetGivenUp": "Opgegeven na 4 pogingen — klik om opnieuw te proberen."
 }

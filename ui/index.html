@@ -607,11 +607,23 @@ function applyStatus(s) {
     $('st-alarm').textContent = desc
       ? t('stat.alarmCode', s.alarm) + ' – ' + desc
       : t('stat.alarmCode', s.alarm);
-    $('btn-alarm-reset').style.display = s.canReset ? '' : 'none';
+    const resetBtn = $('btn-alarm-reset');
+    resetBtn.style.display = s.canReset || s.alarmResetGivenUp ? '' : 'none';
+    resetBtn.disabled = s.alarmResetInProgress;
+    resetBtn.textContent = s.alarmResetInProgress
+      ? t('stat.alarmResetting', s.alarmResetAttempts)
+      : t('stat.alarmReset');
     const hint = $('st-alarm-hint');
-    if (s.isCommLoss) {
-      hint.textContent = t('stat.alarmCommLossHint');
-      hint.style.display = '';
+    if (s.alarm === 251) {
+      if (s.alarmResetGivenUp) {
+        hint.textContent = t('stat.alarmResetGivenUp');
+        hint.style.display = '';
+      } else if (s.alarmResetInProgress) {
+        hint.textContent = t('stat.alarmResetWaiting', s.alarmResetAttempts);
+        hint.style.display = '';
+      } else {
+        hint.style.display = 'none';
+      }
     } else {
       hint.style.display = 'none';
     }

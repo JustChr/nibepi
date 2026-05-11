@@ -92,5 +92,8 @@
   "stat.alarmCode": "⚠ Código alarma: {0}",
   "stat.alarmReset": "Resetear alarma",
   "stat.alarmResetConfirm": "¿Resetear la alarma activa?",
-  "stat.alarmCommLossHint": "La alarma 251 no se puede restablecer remotamente. Confirme en la pantalla de la bomba."
+  "stat.alarmCommLossHint": "La alarma 251 no se puede restablecer remotamente. Confirme en la pantalla de la bomba.",
+  "stat.alarmResetting": "Restableciendo ({0}/4)…",
+  "stat.alarmResetWaiting": "Intento {0}/4 enviado — esperando 30 s para que se limpie la alarma…",
+  "stat.alarmResetGivenUp": "Abandonado tras 4 intentos — pulse para reintentar desde el principio."
 }

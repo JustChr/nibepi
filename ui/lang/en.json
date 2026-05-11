@@ -92,5 +92,8 @@
   "stat.alarmCode": "⚠ Alarm code: {0}",
   "stat.alarmReset": "Reset Alarm",
   "stat.alarmResetConfirm": "Reset the active alarm?",
-  "stat.alarmCommLossHint": "Alarm 251 cannot be reset remotely. Please acknowledge it on the pump display."
+  "stat.alarmCommLossHint": "Alarm 251 cannot be reset remotely. Please acknowledge it on the pump display.",
+  "stat.alarmResetting": "Resetting ({0}/4)…",
+  "stat.alarmResetWaiting": "Attempt {0}/4 sent — waiting 30 s for alarm to clear…",
+  "stat.alarmResetGivenUp": "Gave up after 4 attempts — press to retry from scratch."
 }

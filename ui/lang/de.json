@@ -92,5 +92,8 @@
   "stat.alarmCode": "⚠ Alarmcode: {0}",
   "stat.alarmReset": "Alarm quittieren",
   "stat.alarmResetConfirm": "Aktiven Alarm quittieren?",
-  "stat.alarmCommLossHint": "Alarm 251 kann nicht fernzurückgesetzt werden. Bitte am Pumpen-Display quittieren."
+  "stat.alarmCommLossHint": "Alarm 251 kann nicht fernzurückgesetzt werden. Bitte am Pumpen-Display quittieren.",
+  "stat.alarmResetting": "Wird zurückgesetzt ({0}/4)…",
+  "stat.alarmResetWaiting": "Versuch {0}/4 gesendet — warte 30 s auf Alarmrücksetzung…",
+  "stat.alarmResetGivenUp": "Nach 4 Versuchen aufgegeben — Taste zum erneuten Versuch drücken."
 }
