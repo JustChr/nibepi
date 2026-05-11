@@ -8,6 +8,31 @@ A standalone bridge that connects a NIBE heat pump to Home Assistant via MQTT. R
 
 ---
 
+## What this fork adds
+
+The original project used Node-RED and a custom Pi image. This fork replaces all of that with a single Node.js daemon and a built-in browser UI:
+
+- **No Node-RED** — ~150 MB less RAM, no flow editor, no third-party runtime
+- **Browser config UI** — dark-themed, responsive, served directly from bridge.js on port 1880
+- **10 UI languages** — English, German, French, Spanish, Italian, Dutch, Polish, Czech, Greek, Hungarian
+- **Home Assistant MQTT Discovery** — sensors, numbers, switches, and selects created automatically
+- **OTA updates** — check for and install new releases directly from the Status tab
+- **Alarm display** — active pump alarms shown in the header and status panel with reset support
+- **Live log streaming** — tail the bridge log in real time from the browser
+- **SD card protection** — read-only root filesystem with tmpfs for `/tmp` and `/var/log`; remounts rw only when saving settings
+- **Graceful restarts** — zombie mode keeps the pump connected during service restarts and OTA updates
+- **Hardware watchdog** — Pi auto-reboots if the bridge hangs
+
+---
+
+## Screenshots
+
+| Registers | Status & System | Settings |
+|---|---|---|
+| ![Registers tab](pics/ui_registers.png) | ![Status tab](pics/ui_status.png) | ![Settings tab](pics/ui_settings.png) |
+
+---
+
 ## How it works
 
 ```
@@ -291,4 +316,6 @@ Make sure **HA Discovery** is enabled in the MQTT tab and the register is toggle
 
 ## Credits
 
-Original project by [Fredrik Anerdin](https://github.com/anerdins/nibepi). Licensed under MIT.
+Fork maintained by [Chris Krammer](https://github.com/JustChr). Licensed under MIT.
+
+Based on the original [anerdins/nibepi](https://github.com/anerdins/nibepi) by Fredrik Anerdin.
