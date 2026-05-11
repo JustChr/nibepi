@@ -156,47 +156,10 @@ let pumpFirmware  = (config.system && config.system.firmware) || '';
 let pumpConnected     = false;
 let alarmRegAddr      = null;
 let alarmResetAddr    = null;
-let alarmValue           = 0;
-let alarmResetAttempts   = 0;    // writes fired (0–4)
-let alarmResetGivenUp    = false;
-let alarmResetCooldown   = null; // setTimeout handle for 30 s retry window
-let regPollingPaused     = false;
+let alarmValue        = 0;
 let mqttClient;
 let mqttConnected = false;
 let mqttDiscovered = new Set();
-
-// ── Alarm 251 reset state machine ────────────────────────────────────────────
-function doAlarmResetAttempt() {
-    if (!alarmResetAddr || !core || !core.connected) return;
-    if (alarmResetAttempts >= 4) {
-        alarmResetGivenUp = true;
-        broadcast('status', getStatus());
-        log('warn', 'Alarm 251 reset: gave up after 4 attempts. Monitoring broadcasts for manual clear.');
-        return;
-    }
-    alarmResetAttempts++;
-    const frame = buildWriteFrame(alarmResetAddr, 1);
-    core.send({ type: 'setData', data: frame });
-    log('warn', `Alarm 251 reset attempt ${alarmResetAttempts}/4 — writing 1 to reg ${alarmResetAddr}.`);
-    log('info', `Alarm 251 reset frame: [${frame.map(b => '0x' + b.toString(16).padStart(2,'0')).join(' ')}]`);
-    log('info', `[alarm-251] Alarm register updates will arrive via pump broadcasts (~1 s each); cooldown 30 s before next attempt.`);
-    broadcast('status', getStatus());
-    alarmResetCooldown = setTimeout(() => {
-        alarmResetCooldown = null;
-        if (alarmValue !== 251) {
-            log('info', `Alarm 251 cleared after attempt ${alarmResetAttempts} — reset succeeded.`);
-            return;
-        }
-        log('info', `Alarm 251 still active after 30 s cooldown (attempt ${alarmResetAttempts}/4 was not enough).`);
-        doAlarmResetAttempt();
-    }, 30000);
-}
-
-function cancelAlarmReset() {
-    if (alarmResetCooldown) { clearTimeout(alarmResetCooldown); alarmResetCooldown = null; }
-    alarmResetAttempts = 0;
-    alarmResetGivenUp  = false;
-}
 
 // ── CRC & Modbus frame helpers ────────────────────────────────────────────────
 function calcCRC(data) {
@@ -255,9 +218,7 @@ function spawnBackend() {
     core.on('message', onBackendMessage);
     core.on('exit', code => {
         log('warn', `Backend exited (code ${code}), restarting in 5s`);
-        pumpConnected    = false;
-        regPollingPaused = false;
-        cancelAlarmReset();
+        pumpConnected = false;
         broadcast('status', getStatus());
         setTimeout(spawnBackend, 5000);
     });
@@ -283,8 +244,6 @@ function handleAnnouncement(buf) {
     if (pumpModel) {
         if (!pumpConnected) {
             pumpConnected = true;
-            regPollingPaused = false;
-            cancelAlarmReset();
             broadcast('status', getStatus());
             log('info', `Pump reconnected (${pumpModel}) — restored full register poll queue (${regQueue.length} entries).`);
             if (core && core.connected && regQueue.length > 0) {
@@ -308,8 +267,6 @@ function handleAnnouncement(buf) {
     loadModel(model);
 
     pumpConnected = true;
-    regPollingPaused = false;
-    cancelAlarmReset();
     broadcast('status', getStatus());
     log('info', `Pump: ${model} firmware ${pumpFirmware}`);
 
@@ -326,10 +283,6 @@ function handleFrame(buf, rmuFlag) {
     if (buf[3] === 109) { handleAnnouncement(buf); return; }
     if (!pumpModel) return;
     if (buf[3] !== 104 && buf[3] !== 106 && buf[3] !== 98 && buf[3] !== 96) return;
-
-    if (regPollingPaused) {
-        log('info', `[alarm-251] Pump frame received: cmd=0x${buf[3].toString(16).padStart(2,'0')}, ${buf.length} bytes — pump still communicating.`);
-    }
 
     const timeNow = Date.now();
 
@@ -391,35 +344,8 @@ function handleFrame(buf, rmuFlag) {
             const prev = alarmValue;
             alarmValue = scaled;
             if (scaled !== prev) {
-                log('info', `Alarm reg ${alarmRegAddr}: value changed ${prev} → ${scaled}.`);
-            } else {
-                log('debug', `Alarm reg ${alarmRegAddr}: ${scaled} (unchanged, broadcast).`);
-            }
-
-            if (alarmValue === 251 && prev !== 251) {
-                log('warn', 'Alarm 251 (COM error Modbus 40) active — pausing register polling, starting auto-reset sequence.');
-                log('info', `Poll queue reduced to alarm reg only (was ${regQueue.length} register(s)). Polling alarm reg for clear detection.`);
-                regPollingPaused = true;
-                if (core && core.connected) core.send({ type: 'regRegister', data: [buildReadFrame(alarmRegAddr)] });
-                cancelAlarmReset();
-                broadcast('status', getStatus());
-                doAlarmResetAttempt();
-            } else if (alarmValue === 251 && prev === 251) {
-                // Still alarming — 30 s cooldown already running, alarm reg polled explicitly
-            } else if (prev === 251 && alarmValue !== 251) {
-                log('info', `Alarm 251 cleared — reg ${alarmRegAddr} now ${alarmValue}. Restoring full poll queue.`);
-                regPollingPaused = false;
-                cancelAlarmReset();
-                if (core && core.connected && regQueue.length > 0) {
-                    core.send({ type: 'regRegister', data: regQueue });
-                    log('info', `Restored ${regQueue.length} register(s) to poll queue.`);
-                }
-                broadcast('status', getStatus());
-            } else if (alarmValue !== 0 && prev === 0) {
-                log('warn', `Alarm ${alarmValue} active (reg ${alarmRegAddr}).`);
-                broadcast('status', getStatus());
-            } else if (alarmValue === 0 && prev !== 0) {
-                log('info', `Alarm cleared (was ${prev}, reg ${alarmRegAddr}).`);
+                if (scaled !== 0) log('warn', `Alarm ${scaled} active (reg ${alarmRegAddr}).`);
+                else              log('info',  `Alarm cleared (was ${prev}, reg ${alarmRegAddr}).`);
                 broadcast('status', getStatus());
             }
         }
@@ -630,10 +556,7 @@ function getStatus() {
         readonly:             !!(config.system && config.system.readonly),
         version:              VERSION,
         alarm:                alarmValue,
-        canReset:             alarmResetAddr !== null && alarmValue !== 0 && !alarmResetGivenUp,
-        alarmResetAttempts,
-        alarmResetGivenUp,
-        alarmResetInProgress: alarmResetCooldown !== null,
+        canReset:             alarmResetAddr !== null && alarmValue !== 0 && alarmValue !== 251,
         updateAvailable:      !!(_cachedRelease && _cachedRelease.newer),
         latestVersion:        (_cachedRelease && _cachedRelease.newer) ? _cachedRelease.latest : null,
     };
@@ -761,20 +684,12 @@ const server = http.createServer(async (req, res) => {
                 respond(res, 409, { error: 'No active alarm' }); return;
             }
             if (alarmValue === 251) {
-                if (alarmResetCooldown) {
-                    log('info', 'Alarm 251 reset: cooldown cancelled by user — retrying immediately.');
-                    clearTimeout(alarmResetCooldown);
-                    alarmResetCooldown = null;
-                }
-                alarmResetAttempts = 0;
-                alarmResetGivenUp  = false;
-                doAlarmResetAttempt();
-            } else {
-                const frame = buildWriteFrame(alarmResetAddr, 1);
-                core.send({ type: 'setData', data: frame });
-                log('warn', `Alarm ${alarmValue} reset triggered → reg ${alarmResetAddr} (single write).`);
-                log('info', `Alarm ${alarmValue} reset frame: [${frame.map(b => '0x' + b.toString(16).padStart(2,'0')).join(' ')}]`);
+                respond(res, 409, { error: 'Alarm 251 cannot be reset remotely — restart the bridge service.' }); return;
             }
+            const frame = buildWriteFrame(alarmResetAddr, 1);
+            core.send({ type: 'setData', data: frame });
+            log('warn', `Alarm ${alarmValue} reset triggered → reg ${alarmResetAddr} (single write).`);
+            log('info', `Alarm ${alarmValue} reset frame: [${frame.map(b => '0x' + b.toString(16).padStart(2,'0')).join(' ')}]`);
             respond(res, 200, { ok: true });
 
         } else if (pathname === '/api/logs/clear' && req.method === 'POST') {

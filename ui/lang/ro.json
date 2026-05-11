@@ -93,8 +93,5 @@
   "stat.alarmCode": "⚠ Cod alarmă: {0}",
   "stat.alarmReset": "Resetare alarmă",
   "stat.alarmResetConfirm": "Resetați alarma activă?",
-  "stat.alarmCommLossHint": "Alarma 251 nu poate fi resetată de la distanță. Confirmați-o pe display-ul pompei.",
-  "stat.alarmResetting": "Resetare ({0}/4)…",
-  "stat.alarmResetWaiting": "Tentativa {0}/4 trimisă — așteptare 30 s pentru ștergerea alarmei…",
-  "stat.alarmResetGivenUp": "Renunțat după 4 încercări — apăsați pentru a reîncerca de la capăt."
+  "stat.alarm251Hint": "Alarma 251 nu poate fi resetată prin RS485. Ștergeți-o de pe display-ul pompei, prin myUplink sau repornind serviciul bridge."
 }

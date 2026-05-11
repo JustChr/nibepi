@@ -93,8 +93,5 @@
   "stat.alarmCode": "⚠ Code alarme : {0}",
   "stat.alarmReset": "Réinitialiser alarme",
   "stat.alarmResetConfirm": "Réinitialiser l'alarme active ?",
-  "stat.alarmCommLossHint": "L'alarme 251 ne peut pas être réinitialisée à distance. Veuillez l'acquitter sur l'écran de la pompe.",
-  "stat.alarmResetting": "Réinitialisation ({0}/4)…",
-  "stat.alarmResetWaiting": "Tentative {0}/4 envoyée — attente de 30 s pour effacement de l'alarme…",
-  "stat.alarmResetGivenUp": "Abandon après 4 tentatives — appuyez pour recommencer."
+  "stat.alarm251Hint": "L'alarme 251 ne peut pas être réinitialisée via RS485. Effacez-la sur l'écran de la pompe, via myUplink ou en redémarrant le service bridge."
 }

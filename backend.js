@@ -35,7 +35,7 @@ const fs = require('fs');
 const nack = [0x15];
 const ack = [0x06];
 var myPort;
-const sendQueue = [[192,107,6,115,176,1,0,0,0,111],[192,107,6,212,190,0,0,0,0,199]];
+const sendQueue = [[192,107,6,115,176,1,0,0,0,111]];
 const getQueue = [];
 const rmuQueue = [];
 var regQueue = [];
