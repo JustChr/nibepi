@@ -583,6 +583,7 @@ function switchTab(id) {
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.id === id));
   if (id === 'tab-registers' && !registersLoaded) loadRegisters();
   if (id === 'tab-status') { loadFsStatus(); loadMemChart(); loadAlarmHistory(); }
+  else if (_memLiveTimer) { clearInterval(_memLiveTimer); _memLiveTimer = null; }
   if (id === 'tab-settings') scanSerialPorts();
 }
 
@@ -1030,11 +1031,42 @@ document.querySelectorAll('.filter-btn').forEach(btn => {
 });
 
 // ── Memory chart ─────────────────────────────────────────────────────────────
+let _memLiveTimer = null;
+
 async function loadMemChart() {
-  const pts = await api('GET', '/memhistory').catch(() => []);
+  const resp = await api('GET', '/memhistory').catch(() => null);
   const wrap = $('mem-chart-wrap');
+
+  // Stop any previous live-refresh timer
+  if (_memLiveTimer) { clearInterval(_memLiveTimer); _memLiveTimer = null; }
+
+  const pts = resp && resp.history ? resp.history : (Array.isArray(resp) ? resp : []);
+  const cur = resp && resp.current ? resp.current : null;
+
+  const toMB = b => (b / (1024 * 1024)).toFixed(1);
+
+  // Live-label updater (every 5 s, lightweight — just fetches current values)
+  async function refreshLiveLabel() {
+    try {
+      const r = await api('GET', '/memhistory');
+      const c = r && r.current ? r.current : null;
+      if (!c) return;
+      const bridgeEl   = document.getElementById('mem-live-bridge');
+      const backendEl  = document.getElementById('mem-live-backend');
+      if (bridgeEl)  bridgeEl.textContent  = `bridge ${toMB(c.bridge)} MB`;
+      if (backendEl && c.backend > 0) backendEl.textContent = `backend ${toMB(c.backend)} MB`;
+    } catch {}
+  }
+
   if (!pts || pts.length === 0) {
-    wrap.innerHTML = `<p style="color:var(--muted);font-size:13px">${t('chart.waiting')}</p>`;
+    const c = cur || { bridge: 0, backend: 0 };
+    wrap.innerHTML = `
+      <div style="display:flex;gap:16px;font-size:11px;color:var(--muted);margin-bottom:6px">
+        <span><span style="color:#4f8ef7">●</span> <span id="mem-live-bridge">bridge ${toMB(c.bridge)} MB</span></span>
+        ${c.backend > 0 ? `<span><span style="color:#94a3b8">●</span> <span id="mem-live-backend">backend ${toMB(c.backend)} MB</span></span>` : ''}
+      </div>
+      <p style="color:var(--muted);font-size:13px">${t('chart.waiting')}</p>`;
+    _memLiveTimer = setInterval(refreshLiveLabel, 5000);
     return;
   }
 
@@ -1042,24 +1074,23 @@ async function loadMemChart() {
   const plotW = W - PAD_L - PAD_R;
   const plotH = H - PAD_V * 2;
 
-  const tMin  = pts[0].t;
-  const tMax  = pts[pts.length - 1].t;
+  const tMin   = pts[0].t;
+  const tMax   = pts[pts.length - 1].t;
   const tRange = tMax - tMin || 1;
 
-  const toMB  = b => b / (1024 * 1024);
-  const allMB = pts.flatMap(p => [toMB(p.bridge), p.backend > 0 ? toMB(p.backend) : null]).filter(v => v !== null);
-  const minMB = 0;
-  const maxMB = Math.max(...allMB, 10);
-  const mbRange = maxMB - minMB || 1;
+  const allMB  = pts.flatMap(p => [p.bridge / 1048576, p.backend > 0 ? p.backend / 1048576 : null]).filter(v => v !== null);
+  const maxMB  = Math.max(...allMB, 10);
+  const mbRange = maxMB || 1;
 
-  const toX = ts  => PAD_L + ((ts - tMin) / tRange) * plotW;
-  const toY = mb  => PAD_V + plotH - ((mb - minMB) / mbRange) * plotH;
+  const toX = ts => PAD_L + ((ts - tMin) / tRange) * plotW;
+  const toY = mb => PAD_V + plotH - (mb / mbRange) * plotH;
 
-  const bridgePts  = pts.map(p => `${toX(p.t).toFixed(1)},${toY(toMB(p.bridge)).toFixed(1)}`).join(' ');
-  const backendPts = pts.filter(p => p.backend > 0).map(p => `${toX(p.t).toFixed(1)},${toY(toMB(p.backend)).toFixed(1)}`).join(' ');
+  const bridgePts  = pts.map(p => `${toX(p.t).toFixed(1)},${toY(p.bridge / 1048576).toFixed(1)}`).join(' ');
+  const backendPts = pts.filter(p => p.backend > 0).map(p => `${toX(p.t).toFixed(1)},${toY(p.backend / 1048576).toFixed(1)}`).join(' ');
 
-  const curBridge  = toMB(pts[pts.length - 1].bridge).toFixed(1);
-  const curBackend = pts[pts.length - 1].backend > 0 ? toMB(pts[pts.length - 1].backend).toFixed(1) : null;
+  const liveBridge  = cur ? toMB(cur.bridge)  : toMB(pts[pts.length - 1].bridge);
+  const liveBackend = cur && cur.backend > 0 ? toMB(cur.backend)
+    : (pts[pts.length - 1].backend > 0 ? toMB(pts[pts.length - 1].backend) : null);
 
   const fmtAge = ms => {
     const h = Math.round(ms / 3600000);
@@ -1067,12 +1098,12 @@ async function loadMemChart() {
   };
 
   const yTop = PAD_V + 2, yBot = H - PAD_V - 2, yMid = (yTop + yBot) / 2;
-  const midMB = ((minMB + maxMB) / 2).toFixed(0);
+  const midMB = (maxMB / 2).toFixed(0);
 
   wrap.innerHTML = `
     <div style="display:flex;gap:16px;font-size:11px;color:var(--muted);margin-bottom:6px">
-      <span><span style="color:#4f8ef7">●</span> bridge ${curBridge} MB</span>
-      ${curBackend !== null ? `<span><span style="color:#94a3b8">●</span> backend ${curBackend} MB</span>` : ''}
+      <span><span style="color:#4f8ef7">●</span> <span id="mem-live-bridge">bridge ${liveBridge} MB</span></span>
+      ${liveBackend !== null ? `<span><span style="color:#94a3b8">●</span> <span id="mem-live-backend">backend ${liveBackend} MB</span></span>` : ''}
       <span style="margin-left:auto">${pts.length} samples</span>
     </div>
     <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block" preserveAspectRatio="none">
@@ -1097,6 +1128,8 @@ async function loadMemChart() {
       <span>${pts.length > 1 ? fmtAge(tMax - tMin) + ' span' : ''}</span>
       <span>now</span>
     </div>`;
+
+  _memLiveTimer = setInterval(refreshLiveLabel, 5000);
 }
 
 // ── Register write ────────────────────────────────────────────────────────────

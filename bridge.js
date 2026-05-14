@@ -676,9 +676,11 @@ const server = http.createServer(async (req, res) => {
             const body = await readBody(req);
             deepMerge(config, body);
             setupDone = true;
-            scheduleConfigSave();
-            if (config.mqtt && config.mqtt.enable) startMqtt();
-            respond(res, 200, { ok: true });
+            persistConfig(err => {
+                if (err) { respond(res, 500, { error: err.message }); return; }
+                if (config.mqtt && config.mqtt.enable) startMqtt();
+                respond(res, 200, { ok: true });
+            });
 
         } else if (pathname.startsWith('/api/history/') && req.method === 'GET') {
             const addr = Number(pathname.slice('/api/history/'.length));
@@ -875,7 +877,14 @@ const server = http.createServer(async (req, res) => {
             }).catch(err => respond(res, 500, { error: err.message }));
 
         } else if (pathname === '/api/memhistory' && req.method === 'GET') {
-            respond(res, 200, memHistory);
+            const cur = { t: Date.now(), bridge: process.memoryUsage().rss };
+            try {
+                const pid    = fs.readFileSync(PID_FILE, 'utf8').trim();
+                const status = fs.readFileSync(`/proc/${pid}/status`, 'utf8');
+                const m      = status.match(/VmRSS:\s*(\d+)/);
+                cur.backend  = m ? parseInt(m[1]) * 1024 : 0;
+            } catch { cur.backend = 0; }
+            respond(res, 200, { history: memHistory, current: cur });
 
         } else if (pathname === '/api/version' && req.method === 'GET') {
             respond(res, 200, { current: VERSION });
