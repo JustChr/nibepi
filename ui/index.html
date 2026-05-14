@@ -289,6 +289,19 @@
     </div>
     <div class="toggle-row" style="margin-top:4px">
       <label class="switch">
+        <input type="checkbox" id="mqtt-tls">
+        <span class="slider"></span>
+      </label>
+      <label for="mqtt-tls" data-i18n="set.mqttTls"></label>
+    </div>
+    <div id="mqtt-tls-extra" style="display:none;margin-top:10px">
+      <div class="form-group">
+        <label data-i18n="set.mqttCaFile"></label>
+        <input type="text" id="mqtt-cafile" placeholder="/etc/nibepi/ca.crt">
+      </div>
+    </div>
+    <div class="toggle-row" style="margin-top:10px">
+      <label class="switch">
         <input type="checkbox" id="mqtt-enable">
         <span class="slider"></span>
       </label>
@@ -303,6 +316,43 @@
     </div>
     <div class="btn-row">
       <button class="btn btn-primary" id="btn-save-mqtt" data-i18n="set.save"></button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2 data-i18n="set.backupTitle"></h2>
+    <div class="btn-row" style="margin-top:0">
+      <a id="btn-config-export" class="btn btn-ghost" data-i18n="set.backupExport" href="/api/config/export" download="nibepi-config.json"></a>
+      <label class="btn btn-ghost" style="cursor:pointer">
+        <span data-i18n="set.backupImport"></span>
+        <input type="file" id="config-import-file" accept=".json" style="display:none">
+      </label>
+    </div>
+    <p id="import-note" class="inline-note" style="display:none"></p>
+  </div>
+
+  <div class="card">
+    <h2 data-i18n="set.authTitle"></h2>
+    <p id="auth-desc" style="color:var(--muted);font-size:13px;margin-bottom:14px" data-i18n="set.authDesc"></p>
+    <div class="form-grid">
+      <div class="form-group">
+        <label data-i18n="set.authUser"></label>
+        <input type="text" id="auth-user" autocomplete="username">
+      </div>
+      <div class="form-group">
+        <label data-i18n="set.authPass"></label>
+        <input type="password" id="auth-pass" autocomplete="new-password">
+      </div>
+    </div>
+    <div class="toggle-row" style="margin-top:8px">
+      <label class="switch">
+        <input type="checkbox" id="auth-enable">
+        <span class="slider"></span>
+      </label>
+      <label for="auth-enable" data-i18n="set.authEnable"></label>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-primary" id="btn-save-auth" data-i18n="set.save"></button>
     </div>
   </div>
 
@@ -329,6 +379,7 @@
           <th data-i18n="col.unit"></th>
           <th data-i18n="col.mode"></th>
           <th data-i18n="col.val"></th>
+          <th></th>
           <th data-i18n="col.chart"></th>
           <th data-i18n="col.active"></th>
         </tr>
@@ -367,6 +418,21 @@
       <button class="btn btn-danger" id="btn-alarm-reset" data-i18n="stat.alarmReset"></button>
       <span id="st-alarm-hint" style="display:none;font-size:0.82em;color:var(--color-warn,#b45309)" data-i18n="stat.alarm251Hint"></span>
     </div>
+  </div>
+
+  <div class="card" id="alarm-history-card" style="display:none">
+    <h2 data-i18n="stat.alarmHistory"></h2>
+    <table style="width:100%;border-collapse:collapse;font-size:13px">
+      <thead>
+        <tr>
+          <th style="text-align:left;padding:4px 8px;color:var(--muted);font-weight:500" data-i18n="col.reg"></th>
+          <th style="text-align:left;padding:4px 8px;color:var(--muted);font-weight:500" data-i18n="stat.alarmStart"></th>
+          <th style="text-align:left;padding:4px 8px;color:var(--muted);font-weight:500" data-i18n="stat.alarmEnd"></th>
+        </tr>
+      </thead>
+      <tbody id="alarm-history-tbody"></tbody>
+    </table>
+    <p id="alarm-history-empty" style="color:var(--muted);font-size:13px;display:none" data-i18n="stat.alarmNoHistory"></p>
   </div>
 
   <div class="card">
@@ -516,7 +582,7 @@ function switchTab(id) {
   document.querySelectorAll('nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === id));
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.id === id));
   if (id === 'tab-registers' && !registersLoaded) loadRegisters();
-  if (id === 'tab-status') { loadFsStatus(); loadMemChart(); }
+  if (id === 'tab-status') { loadFsStatus(); loadMemChart(); loadAlarmHistory(); }
   if (id === 'tab-settings') scanSerialPorts();
 }
 
@@ -645,10 +711,18 @@ async function loadConfig() {
   $('mqtt-topic').value       = m.topic     || 'nibe/modbus/';
   $('mqtt-enable').checked    = !!m.enable;
   $('mqtt-discovery').checked = !!m.discovery;
+  $('mqtt-tls').checked       = !!m.tls;
+  $('mqtt-cafile').value      = m.tlsCaFile || '';
+  $('mqtt-tls-extra').style.display = m.tls ? '' : 'none';
   const logCfg = c.log || {};
   let logLvl = logCfg.level;
   if (logLvl === undefined) logLvl = !logCfg.enable ? 'off' : logCfg.debug ? 'debug' : 'info';
   $('log-level').value = logLvl || 'warn';
+  const authCfg = c.auth || {};
+  $('auth-user').value    = authCfg.user  || '';
+  $('auth-pass').value    = authCfg.pass  || '';
+  $('auth-enable').checked = !!authCfg.enable;
+  updateAuthToggle();
   // Apply saved language if different from what was already loaded
   const savedLang = (c.ui && c.ui.lang) || 'en';
   if (savedLang !== currentLang) {
@@ -682,6 +756,16 @@ $('btn-save-conn').addEventListener('click', async () => {
   showToast(t('toast.conn'));
 });
 
+// ── MQTT TLS toggle ───────────────────────────────────────────────────────────
+$('mqtt-tls').addEventListener('change', () => {
+  const on = $('mqtt-tls').checked;
+  $('mqtt-tls-extra').style.display = on ? '' : 'none';
+  if (on && ($('mqtt-port').value === '1883' || !$('mqtt-port').value))
+    $('mqtt-port').value = '8883';
+  else if (!on && $('mqtt-port').value === '8883')
+    $('mqtt-port').value = '1883';
+});
+
 // ── MQTT save ─────────────────────────────────────────────────────────────────
 $('btn-save-mqtt').addEventListener('click', async () => {
   await api('POST', '/config', {
@@ -693,9 +777,53 @@ $('btn-save-mqtt').addEventListener('click', async () => {
       pass:      $('mqtt-pass').value,
       topic:     $('mqtt-topic').value,
       discovery: $('mqtt-discovery').checked,
+      tls:       $('mqtt-tls').checked,
+      tlsCaFile: $('mqtt-cafile').value.trim(),
     }
   });
   showToast(t('toast.mqtt'));
+});
+
+// ── Config import ─────────────────────────────────────────────────────────────
+$('config-import-file').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const note = $('import-note');
+  try {
+    const text = await file.text();
+    const json = JSON.parse(text);
+    await api('POST', '/config/import', json);
+    note.style.display = '';
+    note.style.color = 'var(--green)';
+    note.textContent = t('toast.import');
+    await loadConfig();
+  } catch (err) {
+    note.style.display = '';
+    note.style.color = 'var(--color-warn,#b45309)';
+    note.textContent = err.message;
+  }
+  e.target.value = '';
+});
+
+// ── Auth settings ─────────────────────────────────────────────────────────────
+function updateAuthToggle() {
+  const hasCredentials = $('auth-user').value.trim() && $('auth-pass').value.trim();
+  $('auth-enable').disabled = !hasCredentials;
+  if (!hasCredentials) $('auth-enable').checked = false;
+}
+
+$('auth-user').addEventListener('input', updateAuthToggle);
+$('auth-pass').addEventListener('input', updateAuthToggle);
+
+$('btn-save-auth').addEventListener('click', async () => {
+  await api('POST', '/config', {
+    auth: {
+      enable: $('auth-enable').checked,
+      user:   $('auth-user').value.trim(),
+      pass:   $('auth-pass').value.trim(),
+    }
+  });
+  showToast(t('toast.auth'));
 });
 
 // ── Serial port scan + test ───────────────────────────────────────────────────
@@ -802,7 +930,7 @@ let currentFilter   = 'all';
 let searchTerm      = '';
 
 async function loadRegisters() {
-  $('reg-tbody').innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:24px">${t('reg.loading')}</td></tr>`;
+  $('reg-tbody').innerHTML = `<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:24px">${t('reg.loading')}</td></tr>`;
   allRegs = await api('GET', '/registers');
   registersLoaded = true;
   renderTable();
@@ -832,6 +960,7 @@ function renderTable() {
       <td style="color:var(--muted)">${escHtml(r.unit || '—')}</td>
       <td><span class="tag ${r.mode === 'R/W' ? 'tag-rw' : 'tag-r'}">${r.mode}</span></td>
       <td><span class="live-val${stale ? ' stale' : ''}" id="val-${addr}">${escHtml(valStr)}</span></td>
+      <td>${r.mode === 'R/W' ? `<button class="btn btn-ghost btn-sm reg-write-btn" data-reg="${addr}" title="${t('reg.write')}">✎</button>` : ''}</td>
       <td>
         ${r.active ? `<button class="chart-btn${chartedRegisters.has(addr) ? ' active' : ''}" data-chart="${addr}">&#9193;</button>` : ''}
       </td>
@@ -849,6 +978,10 @@ function renderTable() {
 
   tbody.querySelectorAll('button[data-chart]').forEach(btn => {
     btn.addEventListener('click', () => toggleChart(Number(btn.dataset.chart)));
+  });
+
+  tbody.querySelectorAll('.reg-write-btn').forEach(btn => {
+    btn.addEventListener('click', () => openWriteEditor(Number(btn.dataset.reg), btn));
   });
 
   tbody.querySelectorAll('input[data-reg]').forEach(cb => {
@@ -964,6 +1097,128 @@ async function loadMemChart() {
       <span>${pts.length > 1 ? fmtAge(tMax - tMin) + ' span' : ''}</span>
       <span>now</span>
     </div>`;
+}
+
+// ── Register write ────────────────────────────────────────────────────────────
+function parseStateMap(info) {
+  if (!info) return null;
+  if (/binary encoded|bitmap|\bBit\d+=|\bb\d+:/i.test(info)) return null;
+  const parts = info.split(/(?=\b\d+=)/);
+  const pairs = {};
+  for (const part of parts) {
+    const m = part.match(/^(\d+)=(.+)/);
+    if (!m) continue;
+    const num   = parseInt(m[1]);
+    const label = m[2].replace(/,\s*$/, '').trim();
+    if (label && !(num in pairs)) pairs[num] = label;
+  }
+  return Object.keys(pairs).length >= 2 ? pairs : null;
+}
+
+function openWriteEditor(addr, triggerBtn) {
+  const r = allRegs.find(x => Number(x.register) === addr);
+  if (!r) return;
+  const valEl = $(`val-${addr}`);
+  if (!valEl) return;
+
+  // Prevent double-open
+  if (triggerBtn.dataset.editing) return;
+  triggerBtn.dataset.editing = '1';
+
+  const stateMap = parseStateMap(r.info);
+  const curVal   = liveValues[addr] ? liveValues[addr].value : r.value;
+
+  let input;
+  if (stateMap) {
+    input = document.createElement('select');
+    input.className = 'input-field';
+    input.style.cssText = 'width:auto;font-size:12px;padding:2px 4px';
+    for (const [k, v] of Object.entries(stateMap)) {
+      const opt = document.createElement('option');
+      opt.value = k; opt.textContent = v;
+      if (String(curVal) === k) opt.selected = true;
+      input.appendChild(opt);
+    }
+  } else {
+    input = document.createElement('input');
+    input.type = 'number';
+    input.className = 'input-field';
+    input.style.cssText = 'width:80px;font-size:12px;padding:2px 4px';
+    const factor = Number(r.factor) || 1;
+    input.step  = factor > 1 ? String(1 / factor) : '1';
+    if (r.min && r.max) { input.min = r.min; input.max = r.max; }
+    if (curVal !== null && curVal !== undefined) input.value = curVal;
+  }
+
+  const btnOk  = document.createElement('button');
+  btnOk.className = 'btn btn-ghost btn-sm';
+  btnOk.textContent = '✓';
+
+  const btnX   = document.createElement('button');
+  btnX.className = 'btn btn-ghost btn-sm';
+  btnX.textContent = '✗';
+
+  const wrap = document.createElement('span');
+  wrap.style.cssText = 'display:inline-flex;gap:4px;align-items:center';
+  wrap.appendChild(input);
+  wrap.appendChild(btnOk);
+  wrap.appendChild(btnX);
+
+  const origContent = valEl.textContent;
+  valEl.textContent = '';
+  valEl.appendChild(wrap);
+  input.focus();
+
+  const cancel = () => {
+    valEl.textContent = origContent;
+    delete triggerBtn.dataset.editing;
+  };
+
+  const confirm = async () => {
+    const val = input.value;
+    try {
+      await api('POST', '/register/set', { register: addr, value: val });
+      showToast(t('toast.regSet', addr));
+    } catch (e) {
+      showToast(e.message);
+    }
+    cancel();
+  };
+
+  btnOk.addEventListener('click', confirm);
+  btnX.addEventListener('click',  cancel);
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter')  confirm();
+    if (e.key === 'Escape') cancel();
+  });
+}
+
+// ── Alarm history ─────────────────────────────────────────────────────────────
+async function loadAlarmHistory() {
+  const history = await api('GET', '/alarms/history');
+  const card  = $('alarm-history-card');
+  const tbody = $('alarm-history-tbody');
+  const empty = $('alarm-history-empty');
+  if (!history || !history.length) {
+    card.style.display  = '';
+    tbody.style.display = 'none';
+    empty.style.display = '';
+    return;
+  }
+  card.style.display  = '';
+  tbody.style.display = '';
+  empty.style.display = 'none';
+  tbody.innerHTML = '';
+  const fmtTs = ts => ts ? new Date(ts).toLocaleString() : '';
+  for (const e of [...history].reverse()) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td style="padding:4px 8px;font-weight:600;color:var(--color-warn,#b45309)">⚠ ${e.code}</td>
+      <td style="padding:4px 8px;color:var(--muted)">${fmtTs(e.start)}</td>
+      <td style="padding:4px 8px;color:var(--muted)">${e.end ? fmtTs(e.end) : '<span style="color:var(--color-warn,#b45309)">' + t('stat.alarmActive') + '</span>'}</td>
+    `;
+    tbody.appendChild(tr);
+  }
 }
 
 // ── Filesystem mode ───────────────────────────────────────────────────────────

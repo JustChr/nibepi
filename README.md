@@ -14,11 +14,16 @@ The original project used Node-RED and a custom Pi image. This fork replaces all
 
 - **No Node-RED** — ~150 MB less RAM, no flow editor, no third-party runtime
 - **Browser config UI** — dark-themed, responsive, served directly from bridge.js on port 1880
-- **10 UI languages** — English, German, French, Spanish, Italian, Dutch, Polish, Czech, Greek, Hungarian
+- **19 UI languages** — English, German, French, Spanish, Italian, Dutch, Portuguese, Swedish, Norwegian, Danish, Finnish, Polish, Czech, Slovak, Slovenian, Croatian, Romanian, Hungarian, Greek
 - **Home Assistant MQTT Discovery** — sensors, numbers, switches, and selects created automatically
+- **Register write from UI** — R/W registers have an inline edit button; state-map registers show a dropdown
 - **OTA updates** — check for and install new releases directly from the Status tab
-- **Alarm display** — active pump alarms shown in the header and status panel with reset support
+- **Alarm display & history** — active alarm shown in header and status panel; full history of up to 50 past alarms in Status tab
+- **Config backup/restore** — export config.json with one click; restore by uploading a previously exported file
+- **MQTT TLS** — optional encrypted connection to the broker (port 8883); custom CA cert path supported
+- **Web UI authentication** — optional HTTP Basic Auth; set your own username and password in Settings → Authentication before enabling
 - **Live log streaming** — tail the bridge log in real time from the browser
+- **Memory usage chart** — bridge + backend RSS sampled hourly, displayed as a 2-week sparkline
 - **SD card protection** — read-only root filesystem with tmpfs for `/tmp` and `/var/log`; remounts rw only when saving settings
 - **Graceful restarts** — zombie mode keeps the pump connected during service restarts and OTA updates
 - **Hardware watchdog** — Pi auto-reboots if the bridge hangs
@@ -234,6 +239,20 @@ nibe/modbus/<register>        ← current value (published on every update)
 nibe/modbus/<register>/set    ← write a value (R/W registers only)
 nibe/modbus/<register>/raw    ← raw scaled value
 ```
+
+---
+
+## Authentication
+
+Web UI authentication is **disabled by default**. To enable it:
+
+1. Open the UI → **Settings** → **Authentication**
+2. Enter your desired **username** and **password**
+3. Toggle **Enable Authentication** on and click **Save**
+
+From that point on, every browser connecting to port 1880 will get a native HTTP Basic Auth prompt. To disable it again, uncheck the toggle and save.
+
+> **Tip:** If you lock yourself out (forgot the password), SSH into the Pi and edit `/etc/nibepi/config.json` — set `"auth": { "enable": false }` and restart the bridge.
 
 ---
 

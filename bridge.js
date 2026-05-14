@@ -158,6 +158,8 @@ let pumpConnected     = false;
 let alarmRegAddr      = null;
 let alarmResetAddr    = null;
 let alarmValue        = 0;
+const alarmHistory    = [];
+const MAX_ALARM_HIST  = 50;
 let mqttClient;
 let mqttConnected = false;
 let mqttDiscovered = new Set();
@@ -345,8 +347,15 @@ function handleFrame(buf, rmuFlag) {
             const prev = alarmValue;
             alarmValue = scaled;
             if (scaled !== prev) {
-                if (scaled !== 0) log('warn', `Alarm ${scaled} active (reg ${alarmRegAddr}).`);
-                else              log('info',  `Alarm cleared (was ${prev}, reg ${alarmRegAddr}).`);
+                if (scaled !== 0) {
+                    alarmHistory.push({ code: scaled, start: Date.now(), end: null });
+                    if (alarmHistory.length > MAX_ALARM_HIST) alarmHistory.shift();
+                    log('warn', `Alarm ${scaled} active (reg ${alarmRegAddr}).`);
+                } else {
+                    const last = [...alarmHistory].reverse().find(e => e.code === prev && !e.end);
+                    if (last) last.end = Date.now();
+                    log('info',  `Alarm cleared (was ${prev}, reg ${alarmRegAddr}).`);
+                }
                 broadcast('status', getStatus());
             }
         }
@@ -372,9 +381,10 @@ function startMqtt() {
     const { host, port, user, pass, topic } = config.mqtt;
     if (!host) return;
 
-    const mqtt = require('mqtt');
+    const mqtt    = require('mqtt');
+    const useTls  = !!(config.mqtt.tls);
     const opts = {
-        port:            Number(port) || 1883,
+        port:            Number(port) || (useTls ? 8883 : 1883),
         clientId:        'nibepi_' + Math.random().toString(16).slice(2, 10),
         keepalive:       60,
         reconnectPeriod: 5000,
@@ -384,8 +394,16 @@ function startMqtt() {
     };
     if (user) opts.username = user;
     if (pass) opts.password = pass;
+    if (useTls) {
+        opts.rejectUnauthorized = true;
+        const caFile = config.mqtt.tlsCaFile;
+        if (caFile) {
+            try { opts.ca = fs.readFileSync(caFile); }
+            catch(e) { log('error', `MQTT TLS: CA file load failed: ${e.message}`); }
+        }
+    }
 
-    mqttClient = mqtt.connect('mqtt://' + host, opts);
+    mqttClient = mqtt.connect((useTls ? 'mqtts' : 'mqtt') + '://' + host, opts);
 
     mqttClient.on('connect', () => {
         mqttConnected = true;
@@ -581,6 +599,29 @@ const server = http.createServer(async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
 
+    // ── HTTP Basic Auth ───────────────────────────────────────────────────────
+    const authCfg = config.auth || {};
+    if (authCfg.enable) {
+        const hdr = req.headers['authorization'] || '';
+        let ok = false;
+        if (hdr.startsWith('Basic ')) {
+            try {
+                const decoded = Buffer.from(hdr.slice(6), 'base64').toString('utf8');
+                const colon   = decoded.indexOf(':');
+                if (colon !== -1) {
+                    const u = decoded.slice(0, colon);
+                    const p = decoded.slice(colon + 1);
+                    ok = u === (authCfg.user || '') && p === (authCfg.pass || '') && !!authCfg.user;
+                }
+            } catch {}
+        }
+        if (!ok) {
+            res.writeHead(401, { 'WWW-Authenticate': 'Basic realm="NibePi"' });
+            res.end('Unauthorized');
+            return;
+        }
+    }
+
     // ── Static UI files ───────────────────────────────────────────────────────
     if (req.method === 'GET' && !pathname.startsWith('/api/')) {
         const filePath = pathname === '/'
@@ -630,8 +671,26 @@ const server = http.createServer(async (req, res) => {
                 else { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(data); }
             });
 
+        } else if (pathname === '/api/alarms/history' && req.method === 'GET') {
+            respond(res, 200, alarmHistory);
+
         } else if (pathname === '/api/config' && req.method === 'GET') {
             respond(res, 200, config);
+
+        } else if (pathname === '/api/config/export' && req.method === 'GET') {
+            const data = JSON.stringify(config, null, 2);
+            res.writeHead(200, {
+                'Content-Type': 'application/json',
+                'Content-Disposition': 'attachment; filename="nibepi-config.json"',
+            });
+            res.end(data);
+
+        } else if (pathname === '/api/config/import' && req.method === 'POST') {
+            const body = await readBody(req);
+            deepMerge(config, body);
+            scheduleConfigSave();
+            if (config.mqtt && config.mqtt.enable) startMqtt();
+            respond(res, 200, { ok: true });
 
         } else if (pathname === '/api/config' && req.method === 'POST') {
             const body = await readBody(req);
@@ -669,6 +728,15 @@ const server = http.createServer(async (req, res) => {
             config.registers = (config.registers || []).filter(r => Number(r) !== n);
             scheduleConfigSave();
             removeRegular(n);
+            respond(res, 200, { ok: true });
+
+        } else if (pathname === '/api/register/set' && req.method === 'POST') {
+            const { register: addr, value } = await readBody(req);
+            const reg = regMap[Number(addr)];
+            if (!reg)                          { respond(res, 404, { error: `Unknown register ${addr}` }); return; }
+            if (reg.mode !== 'R/W')            { respond(res, 400, { error: 'Register is read-only' }); return; }
+            if (!core || !core.connected)      { respond(res, 409, { error: 'Pump not connected' }); return; }
+            handleMqttSet(Number(addr), String(value));
             respond(res, 200, { ok: true });
 
         } else if (pathname === '/api/alarm/reset' && req.method === 'POST') {
