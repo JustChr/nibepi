@@ -50,6 +50,8 @@ const DEFAULT_CONFIG = {
 };
 
 // ── Config ────────────────────────────────────────────────────────────────────
+let setupDone = fs.existsSync(CONFIG_FILE);
+
 let config = (() => {
     try   { return JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')); }
     catch { return JSON.parse(JSON.stringify(DEFAULT_CONFIG)); }
@@ -599,6 +601,13 @@ const server = http.createServer(async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
 
+    // ── First-time setup redirect ─────────────────────────────────────────────
+    if (!setupDone && pathname !== '/setup' && !pathname.startsWith('/api/') && !pathname.startsWith('/lang/')) {
+        res.writeHead(302, { Location: '/setup' });
+        res.end();
+        return;
+    }
+
     // ── HTTP Basic Auth ───────────────────────────────────────────────────────
     const authCfg = config.auth || {};
     if (authCfg.enable) {
@@ -626,7 +635,9 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && !pathname.startsWith('/api/')) {
         const filePath = pathname === '/'
             ? path.join(UI_DIR, 'index.html')
-            : path.join(UI_DIR, pathname);
+            : pathname === '/setup'
+                ? path.join(UI_DIR, 'setup.html')
+                : path.join(UI_DIR, pathname);
         if (!filePath.startsWith(UI_DIR)) { res.writeHead(403); res.end(); return; }
         fs.readFile(filePath, (err, data) => {
             if (err) { res.writeHead(404); res.end('Not found'); return; }
@@ -661,7 +672,15 @@ const server = http.createServer(async (req, res) => {
 
     // ── REST API ──────────────────────────────────────────────────────────────
     try {
-        if (pathname.startsWith('/api/history/') && req.method === 'GET') {
+        if (pathname === '/api/setup/complete' && req.method === 'POST') {
+            const body = await readBody(req);
+            deepMerge(config, body);
+            setupDone = true;
+            scheduleConfigSave();
+            if (config.mqtt && config.mqtt.enable) startMqtt();
+            respond(res, 200, { ok: true });
+
+        } else if (pathname.startsWith('/api/history/') && req.method === 'GET') {
             const addr = Number(pathname.slice('/api/history/'.length));
             respond(res, 200, ringBuffer[addr] || []);
 

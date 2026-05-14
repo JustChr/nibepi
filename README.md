@@ -242,6 +242,20 @@ nibe/modbus/<register>/raw    ← raw scaled value
 
 ---
 
+## First-time setup
+
+On a fresh install (no existing `/etc/nibepi/config.json`), the bridge automatically redirects to a 5-step setup wizard at `http://nibepi:1880/setup`:
+
+1. **Language** — pick the UI language
+2. **Serial Connection** — select the RS485 port and optionally the pump model
+3. **MQTT** — configure the broker (or skip for later)
+4. **Authentication** — optionally set a username and password
+5. **Review & Finish** — save and redirect to the main UI
+
+Existing installs that already have a config file skip the wizard entirely.
+
+---
+
 ## Authentication
 
 Web UI authentication is **disabled by default**. To enable it:
