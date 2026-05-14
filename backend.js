@@ -51,6 +51,7 @@ let checkACK = {};
 var portName;
 var portOpenRetries = 0;
 const PID_FILE = '/tmp/nibepi_backend.pid';
+let debugMode = false;
 
 function openPort() {
     myPort = new serialport({ path: portName, baudRate: 9600 });
@@ -102,6 +103,8 @@ process.on('message', (m) => {
         regQueue = m.data;
     } else if(m.type=="red") {
         red = m.data;
+    } else if(m.type=="debug") {
+        debugMode = !!m.data;
     }
   });
   let zombieMode = false;
@@ -179,7 +182,7 @@ function showError(error) {
 }
 
 function analyzeData(data) {
-    if(process.connected===true) {
+    if(debugMode && process.connected===true) {
         process.send({type:"log",data:Array.from(data),level:"core",kind:"RAW"});
     }
     // Sometimes and ACK [0x06] is the first byte, and the second byte is the start. We shift it.
@@ -252,7 +255,7 @@ function analyzeData(data) {
                                     }
                                     if(process.connected===true) {
                                         process.send({type:"data",data:result,rmu:checkACK[result[2]]});
-                                        process.send({type:"log",data:result,level:"debug",kind:"OK"});
+                                        if(debugMode) process.send({type:"log",data:result,level:"debug",kind:"OK"});
                                     }
                                 }
                             }, err => {
@@ -307,12 +310,12 @@ const makeResponse = (data) => {
                         let address = lastMsg.address;
                         if(process.connected===true) {
                             process.send({type:"ack",data:{register:address,ack:true}});
-                            process.send({type:"log",data:`Register: ${address}, Buffer: ${JSON.stringify(lastMsg)}`,level:"core",kind:"RMU SENT"});
+                            if(debugMode) process.send({type:"log",data:`Register: ${address}, Buffer: ${JSON.stringify(lastMsg)}`,level:"core",kind:"RMU SENT"});
                         }
                         if(lastMsg.data[3]===6) {
                             if(process.connected===true) {
                                 process.send({type:"data",data:lastMsg.ackback,rmu:checkACK[lastMsg.ackback[2]]});
-                                process.send({type:"log",data:lastMsg,level:"debug",kind:"RMU ACKBACK"});
+                                if(debugMode) process.send({type:"log",data:lastMsg,level:"debug",kind:"RMU ACKBACK"});
                             }
                         }
                         myPort.write(lastMsg.data);
@@ -335,7 +338,7 @@ const makeResponse = (data) => {
         } else if(data[3]==0x62) {
             // Message updates
             if(checkACK[data[2]]===false) {
-                if(process.connected===true) {
+                if(debugMode && process.connected===true) {
                     let logOut = Array.from(data);
                     process.send({type:"log",data:logOut,level:"debug",kind:"RMU DATA"});
                 }
@@ -355,7 +358,7 @@ const makeResponse = (data) => {
             }
         } else if(data[3]==0xEE) {
             if(checkACK[data[2]]===false) {
-                if(process.connected===true) {
+                if(debugMode && process.connected===true) {
                     process.send({type:"log",data:"Sending RMU Version v259",level:"debug",kind:"RMU ACK"});
                 }
                 myPort.write([192,238,3,238,3,1,193]);
@@ -410,7 +413,7 @@ const makeResponse = (data) => {
                 let address = (lastMsg[4] * 256 + lastMsg[3]);
                 if(process.connected===true) {
                     process.send({type:"ack",data:{register:address,ack:true}});
-                    process.send({type:"log",data:`Register: ${address}, Buffer: ${JSON.stringify(lastMsg)}`,level:"debug",kind:"SENT"});
+                    if(debugMode) process.send({type:"log",data:`Register: ${address}, Buffer: ${JSON.stringify(lastMsg)}`,level:"debug",kind:"SENT"});
                 }
                 myPort.write(lastMsg);
                 resolve(data);

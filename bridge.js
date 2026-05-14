@@ -220,6 +220,7 @@ function spawnBackend() {
     log('info', `Spawning backend on ${port}`);
     core = fork(BACKEND_FILE, { detached: true });
     core.send({ start: true, port });
+    core.send({ type: 'debug', data: logLevel() === 'debug' });
     core.on('message', onBackendMessage);
     core.on('exit', code => {
         log('warn', `Backend exited (code ${code}), restarting in 5s`);
@@ -721,6 +722,7 @@ const server = http.createServer(async (req, res) => {
             const newMqttEnable = config.mqtt && config.mqtt.enable;
             if (newMqttEnable && (!mqttConnected || !prevMqttEnable)) startMqtt();
             else if (!newMqttEnable && mqttClient) { try { mqttClient.end(true); } catch {} mqttConnected = false; }
+            if (core && core.connected) core.send({ type: 'debug', data: logLevel() === 'debug' });
             respond(res, 200, { ok: true });
 
         } else if (pathname === '/api/registers' && req.method === 'GET') {
