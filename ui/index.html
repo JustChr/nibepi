@@ -216,9 +216,18 @@
         <option value="fr">Français</option>
         <option value="es">Español</option>
         <option value="it">Italiano</option>
-        <option value="pl">Polski</option>
-        <option value="ro">Română</option>
         <option value="nl">Nederlands</option>
+        <option value="pt">Português</option>
+        <option value="sv">Svenska</option>
+        <option value="no">Norsk</option>
+        <option value="da">Dansk</option>
+        <option value="fi">Suomi</option>
+        <option value="pl">Polski</option>
+        <option value="cs">Čeština</option>
+        <option value="sk">Slovenčina</option>
+        <option value="sl">Slovenščina</option>
+        <option value="hr">Hrvatski</option>
+        <option value="ro">Română</option>
         <option value="hu">Magyar</option>
         <option value="el">Ελληνικά</option>
       </select>
@@ -358,6 +367,11 @@
       <button class="btn btn-danger" id="btn-alarm-reset" data-i18n="stat.alarmReset"></button>
       <span id="st-alarm-hint" style="display:none;font-size:0.82em;color:var(--color-warn,#b45309)" data-i18n="stat.alarm251Hint"></span>
     </div>
+  </div>
+
+  <div class="card">
+    <h2 data-i18n="stat.memTitle"></h2>
+    <div id="mem-chart-wrap"></div>
   </div>
 
   <div class="card">
@@ -502,7 +516,7 @@ function switchTab(id) {
   document.querySelectorAll('nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === id));
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.id === id));
   if (id === 'tab-registers' && !registersLoaded) loadRegisters();
-  if (id === 'tab-status') loadFsStatus();
+  if (id === 'tab-status') { loadFsStatus(); loadMemChart(); }
   if (id === 'tab-settings') scanSerialPorts();
 }
 
@@ -521,18 +535,6 @@ function openEvents() {
     const d = JSON.parse(e.data);
     liveValues[d.register] = { value: d.value, unit: d.unit, ts: Date.now() };
     updateTableCell(d.register, d.value, d.unit);
-  });
-  es.addEventListener('history', e => {
-    const hist = JSON.parse(e.data);
-    for (const [addr, pts] of Object.entries(hist)) {
-      const a = Number(addr);
-      recordedValues[a] = pts;
-      if (pts.length > 0) {
-        const last = pts[pts.length - 1];
-        liveValues[a] = { value: last.v, ts: last.t };
-      }
-    }
-    if (chartedRegisters.size > 0) renderCharts();
   });
   es.addEventListener('fault', e => {
     const d = JSON.parse(e.data);
@@ -893,6 +895,76 @@ document.querySelectorAll('.filter-btn').forEach(btn => {
     renderTable();
   });
 });
+
+// ── Memory chart ─────────────────────────────────────────────────────────────
+async function loadMemChart() {
+  const pts = await api('GET', '/memhistory').catch(() => []);
+  const wrap = $('mem-chart-wrap');
+  if (!pts || pts.length === 0) {
+    wrap.innerHTML = `<p style="color:var(--muted);font-size:13px">${t('chart.waiting')}</p>`;
+    return;
+  }
+
+  const W = 540, H = 120, PAD_L = 36, PAD_R = 8, PAD_V = 10;
+  const plotW = W - PAD_L - PAD_R;
+  const plotH = H - PAD_V * 2;
+
+  const tMin  = pts[0].t;
+  const tMax  = pts[pts.length - 1].t;
+  const tRange = tMax - tMin || 1;
+
+  const toMB  = b => b / (1024 * 1024);
+  const allMB = pts.flatMap(p => [toMB(p.bridge), p.backend > 0 ? toMB(p.backend) : null]).filter(v => v !== null);
+  const minMB = 0;
+  const maxMB = Math.max(...allMB, 10);
+  const mbRange = maxMB - minMB || 1;
+
+  const toX = ts  => PAD_L + ((ts - tMin) / tRange) * plotW;
+  const toY = mb  => PAD_V + plotH - ((mb - minMB) / mbRange) * plotH;
+
+  const bridgePts  = pts.map(p => `${toX(p.t).toFixed(1)},${toY(toMB(p.bridge)).toFixed(1)}`).join(' ');
+  const backendPts = pts.filter(p => p.backend > 0).map(p => `${toX(p.t).toFixed(1)},${toY(toMB(p.backend)).toFixed(1)}`).join(' ');
+
+  const curBridge  = toMB(pts[pts.length - 1].bridge).toFixed(1);
+  const curBackend = pts[pts.length - 1].backend > 0 ? toMB(pts[pts.length - 1].backend).toFixed(1) : null;
+
+  const fmtAge = ms => {
+    const h = Math.round(ms / 3600000);
+    return h < 24 ? `${h}h` : `${Math.round(h / 24)}d`;
+  };
+
+  const yTop = PAD_V + 2, yBot = H - PAD_V - 2, yMid = (yTop + yBot) / 2;
+  const midMB = ((minMB + maxMB) / 2).toFixed(0);
+
+  wrap.innerHTML = `
+    <div style="display:flex;gap:16px;font-size:11px;color:var(--muted);margin-bottom:6px">
+      <span><span style="color:#4f8ef7">●</span> bridge ${curBridge} MB</span>
+      ${curBackend !== null ? `<span><span style="color:#94a3b8">●</span> backend ${curBackend} MB</span>` : ''}
+      <span style="margin-left:auto">${pts.length} samples</span>
+    </div>
+    <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block" preserveAspectRatio="none">
+      <defs>
+        <linearGradient id="mg-bridge" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%"   stop-color="#4f8ef7" stop-opacity="0.2"/>
+          <stop offset="100%" stop-color="#4f8ef7" stop-opacity="0.02"/>
+        </linearGradient>
+      </defs>
+      <line x1="${PAD_L}" y1="${yTop}" x2="${W-PAD_R}" y2="${yTop}" stroke="var(--border)" stroke-width="0.5"/>
+      <line x1="${PAD_L}" y1="${yMid}" x2="${W-PAD_R}" y2="${yMid}" stroke="var(--border)" stroke-width="0.5" stroke-dasharray="3,3"/>
+      <line x1="${PAD_L}" y1="${yBot}" x2="${W-PAD_R}" y2="${yBot}" stroke="var(--border)" stroke-width="0.5"/>
+      <text x="${PAD_L-4}" y="${yTop+3}"  text-anchor="end" font-size="9" fill="var(--muted)">${maxMB.toFixed(0)}</text>
+      <text x="${PAD_L-4}" y="${yMid+3}"  text-anchor="end" font-size="9" fill="var(--muted)">${midMB}</text>
+      <text x="${PAD_L-4}" y="${yBot+3}"  text-anchor="end" font-size="9" fill="var(--muted)">0</text>
+      <polygon points="${PAD_L},${H-PAD_V} ${bridgePts} ${toX(tMax).toFixed(1)},${H-PAD_V}" fill="url(#mg-bridge)"/>
+      <polyline points="${bridgePts}"  fill="none" stroke="#4f8ef7" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>
+      ${backendPts ? `<polyline points="${backendPts}" fill="none" stroke="#94a3b8" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="4,2"/>` : ''}
+    </svg>
+    <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);padding:2px ${PAD_R}px 0 ${PAD_L}px">
+      <span>${fmtAge(Date.now() - tMin)} ago</span>
+      <span>${pts.length > 1 ? fmtAge(tMax - tMin) + ' span' : ''}</span>
+      <span>now</span>
+    </div>`;
+}
 
 // ── Filesystem mode ───────────────────────────────────────────────────────────
 async function loadFsStatus() {

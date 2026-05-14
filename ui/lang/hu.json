@@ -42,6 +42,7 @@
   "stat.fw": "Firmware",
   "stat.mqtt": "MQTT",
   "stat.fs": "Fájlrendszer",
+  "stat.memTitle": "Memóriahasználat",
   "stat.fsTitle": "Fájlrendszer",
   "stat.fsDesc": "A gyökér fájlrendszer csak olvasható módban van (SD-kártya védelem). A beállítások mentése előtt ideiglenesen írhatóvá válik.",
   "stat.fsUnknown": "— ismeretlen",

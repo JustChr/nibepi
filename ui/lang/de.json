@@ -42,6 +42,7 @@
   "stat.fw": "Firmware",
   "stat.mqtt": "MQTT",
   "stat.fs": "Dateisystem",
+  "stat.memTitle": "Speicherverbrauch",
   "stat.fsTitle": "Dateisystem",
   "stat.fsDesc": "Das Root-Dateisystem ist im Nur-Lesen-Modus (SD-Kartenschutz). Vor dem Speichern wird es automatisch kurz beschreibbar gemacht.",
   "stat.fsUnknown": "— unbekannt",

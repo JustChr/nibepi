@@ -42,6 +42,7 @@
   "stat.fw": "Firmware",
   "stat.mqtt": "MQTT",
   "stat.fs": "Sistema de archivos",
+  "stat.memTitle": "Uso de memoria",
   "stat.fsTitle": "Sistema de archivos",
   "stat.fsDesc": "El sistema de archivos raíz está en modo de solo lectura (protección de la tarjeta SD). Se hace temporalmente escribible antes de guardar.",
   "stat.fsUnknown": "— desconocido",

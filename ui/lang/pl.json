@@ -42,6 +42,7 @@
   "stat.fw": "Firmware",
   "stat.mqtt": "MQTT",
   "stat.fs": "System plików",
+  "stat.memTitle": "Zużycie pamięci",
   "stat.fsTitle": "System plików",
   "stat.fsDesc": "Główny system plików jest w trybie tylko do odczytu (ochrona karty SD). Jest tymczasowo udostępniany do zapisu przed zapisaniem ustawień.",
   "stat.fsUnknown": "— nieznany",

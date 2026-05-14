@@ -6,7 +6,7 @@ After=network.target
 Type=simple
 User=pi
 WorkingDirectory=/opt/nibepi
-ExecStart=/usr/local/bin/node /opt/nibepi/bridge.js
+ExecStart=/usr/local/bin/node --max-old-space-size=64 /opt/nibepi/bridge.js
 Restart=always
 RestartSec=5
 KillMode=process

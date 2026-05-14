@@ -42,6 +42,7 @@
   "stat.fw": "Firmware",
   "stat.mqtt": "MQTT",
   "stat.fs": "Sistem de fișiere",
+  "stat.memTitle": "Utilizare memorie",
   "stat.fsTitle": "Sistem de fișiere",
   "stat.fsDesc": "Sistemul de fișiere root este în modul doar citire (protecție card SD). Este temporar făcut inscriptibil înainte de salvarea setărilor.",
   "stat.fsUnknown": "— necunoscut",

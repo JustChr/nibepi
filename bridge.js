@@ -14,6 +14,7 @@ const CONFIG_FILE  = '/etc/nibepi/config.json';
 const MODELS_FILE  = path.join(__dirname, 'lib/models.json');
 const ALARMS_FILE  = path.join(__dirname, 'lib/alarms.json');
 const BACKEND_FILE = path.join(__dirname, 'backend.js');
+const PID_FILE     = '/tmp/nibepi_backend.pid';
 const UI_DIR       = path.join(__dirname, 'ui');
 const HTTP_PORT    = Number(process.env.PORT) || 1880;
 const LOG_BUFFER   = 500;
@@ -379,6 +380,7 @@ function startMqtt() {
         reconnectPeriod: 5000,
         connectTimeout:  30000,
         clean:           true,
+        queueQoSZero:    false,
     };
     if (user) opts.username = user;
     if (pass) opts.password = pass;
@@ -406,12 +408,6 @@ function startMqtt() {
         if (!incomingTopic.startsWith(sub)) return;
         const parts = incomingTopic.slice(sub.length).split('/');
         if (parts[1] === 'set') handleMqttSet(Number(parts[0]), message.toString());
-    });
-
-    mqttClient.on('connect', () => {
-        // Re-subscribe after broker restart
-        mqttClient.subscribe((config.mqtt.topic || '') + '#');
-        mqttDiscovered.clear();
     });
 }
 
@@ -608,7 +604,6 @@ const server = http.createServer(async (req, res) => {
         res.write(':\n\n');
         eventSseClients.add(res);
         sendSse(res, 'status', getStatus());
-        if (Object.keys(ringBuffer).length > 0) sendSse(res, 'history', ringBuffer);
         req.on('close', () => eventSseClients.delete(res));
         return;
     }
@@ -792,6 +787,9 @@ const server = http.createServer(async (req, res) => {
                 setTimeout(()       => finish(false, 'Timeout'), 6000);
             }).catch(err => respond(res, 500, { error: err.message }));
 
+        } else if (pathname === '/api/memhistory' && req.method === 'GET') {
+            respond(res, 200, memHistory);
+
         } else if (pathname === '/api/version' && req.method === 'GET') {
             respond(res, 200, { current: VERSION });
 
@@ -855,6 +853,27 @@ setInterval(() => {
         if (ringBuffer[a].length > RING_SIZE) ringBuffer[a].shift();
     }
 }, RING_INTERVAL);
+
+// ── Memory history ────────────────────────────────────────────────────────────
+const memHistory    = [];
+const MEM_RING_SIZE = 336;       // 14 days × 24 h
+const MEM_INTERVAL  = 3_600_000; // 1 h
+
+function sampleMemory() {
+    const bridge = process.memoryUsage().rss;
+    let backend = 0;
+    try {
+        const pid    = fs.readFileSync(PID_FILE, 'utf8').trim();
+        const status = fs.readFileSync(`/proc/${pid}/status`, 'utf8');
+        const m      = status.match(/VmRSS:\s*(\d+)/);
+        if (m) backend = parseInt(m[1]) * 1024;
+    } catch {}
+    memHistory.push({ t: Date.now(), bridge, backend });
+    if (memHistory.length > MEM_RING_SIZE) memHistory.shift();
+}
+
+sampleMemory();
+setInterval(sampleMemory, MEM_INTERVAL);
 
 // ── GitHub release check ──────────────────────────────────────────────────────
 let _cachedRelease = null;

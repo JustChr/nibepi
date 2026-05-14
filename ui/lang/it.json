@@ -42,6 +42,7 @@
   "stat.fw": "Firmware",
   "stat.mqtt": "MQTT",
   "stat.fs": "File system",
+  "stat.memTitle": "Utilizzo memoria",
   "stat.fsTitle": "File system",
   "stat.fsDesc": "Il file system root è in modalità sola lettura (protezione scheda SD). Viene temporaneamente reso scrivibile prima di salvare.",
   "stat.fsUnknown": "— sconosciuto",
