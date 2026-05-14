@@ -26,7 +26,7 @@ const VERSION = (() => {
 })();
 
 // ── Ring buffer ───────────────────────────────────────────────────────────────
-const RING_SIZE     = 360;          // 1 h at 10 s interval
+const RING_SIZE     = 360;          // max points per register; compacts (halves) rather than dropping oldest
 const RING_INTERVAL = 10 * 1000;
 const ringBuffer    = {};           // address (number) → [{t, v}, …]
 
@@ -948,7 +948,13 @@ setInterval(() => {
         const a = Number(addr);
         if (!ringBuffer[a]) ringBuffer[a] = [];
         ringBuffer[a].push({ t: now, v: activeValues[a].data });
-        if (ringBuffer[a].length > RING_SIZE) ringBuffer[a].shift();
+        if (ringBuffer[a].length > RING_SIZE) {
+            // Keep oldest point, drop every odd-indexed point to halve resolution
+            const buf = ringBuffer[a];
+            const c = [buf[0]];
+            for (let i = 2; i < buf.length; i += 2) c.push(buf[i]);
+            ringBuffer[a] = c;
+        }
     }
 }, RING_INTERVAL);
 

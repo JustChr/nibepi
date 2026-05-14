@@ -142,7 +142,13 @@
   #chart-panel.visible { display: block; }
   .sparkline-wrap {
     background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
-    padding: 10px 14px; margin-bottom: 8px;
+    padding: 10px 14px; margin-bottom: 8px; position: relative;
+  }
+  .chart-tooltip {
+    position: absolute; pointer-events: none; z-index: 10;
+    background: #1a1d2e; border: 1px solid var(--border); border-radius: 6px;
+    padding: 5px 9px; font-size: 12px; font-family: monospace;
+    white-space: nowrap; line-height: 1.5;
   }
   .sparkline-header {
     display: flex; justify-content: space-between; align-items: baseline;
@@ -1004,6 +1010,7 @@ function renderTable() {
 function updateTableCell(register, value, unit) {
   const el = $(`val-${register}`);
   if (el) {
+    if (el.dataset.editing) return;
     el.textContent = `${value}${unit ? ' '+unit : ''}`;
     el.classList.remove('stale');
     el.style.transition = 'none';
@@ -1148,6 +1155,18 @@ function parseStateMap(info) {
   return Object.keys(pairs).length >= 2 ? pairs : null;
 }
 
+function sizeBounds(size) {
+  switch (size) {
+    case 'u8':  return { min: 0,           max: 255         };
+    case 's8':  return { min: -128,        max: 127         };
+    case 'u16': return { min: 0,           max: 65535       };
+    case 's16': return { min: -32768,      max: 32767       };
+    case 'u32': return { min: 0,           max: 4294967295  };
+    case 's32': return { min: -2147483648, max: 2147483647  };
+    default:    return null;
+  }
+}
+
 function openWriteEditor(addr, triggerBtn) {
   const r = allRegs.find(x => Number(x.register) === addr);
   if (!r) return;
@@ -1155,14 +1174,19 @@ function openWriteEditor(addr, triggerBtn) {
   if (!valEl) return;
 
   // Prevent double-open
-  if (triggerBtn.dataset.editing) return;
-  triggerBtn.dataset.editing = '1';
+  if (valEl.dataset.editing) return;
+  valEl.dataset.editing = '1';
 
   const stateMap = parseStateMap(r.info);
+  const factor   = Number(r.factor) || 1;
+  const rawMin   = Number(r.min);
+  const rawMax   = Number(r.max);
+  const hasRange = rawMin !== 0 || rawMax !== 0;
   const curVal   = liveValues[addr] ? liveValues[addr].value : r.value;
 
   let input;
   if (stateMap) {
+    // ── State map → dropdown ──────────────────────────────────────────────────
     input = document.createElement('select');
     input.className = 'input-field';
     input.style.cssText = 'width:auto;font-size:12px;padding:2px 4px';
@@ -1173,41 +1197,101 @@ function openWriteEditor(addr, triggerBtn) {
       input.appendChild(opt);
     }
   } else {
-    input = document.createElement('input');
-    input.type = 'number';
-    input.className = 'input-field';
-    input.style.cssText = 'width:80px;font-size:12px;padding:2px 4px';
-    const factor = Number(r.factor) || 1;
-    input.step  = factor > 1 ? String(1 / factor) : '1';
-    if (r.min && r.max) { input.min = r.min; input.max = r.max; }
-    if (curVal !== null && curVal !== undefined) input.value = curVal;
+    // ── Numeric input ─────────────────────────────────────────────────────────
+    const isBool = rawMin === 0 && rawMax === 1;
+
+    if (isBool) {
+      // Boolean (0/1) → two-option select
+      input = document.createElement('select');
+      input.className = 'input-field';
+      input.style.cssText = 'width:auto;font-size:12px;padding:2px 4px';
+      for (const [k, label] of [['0','0'],['1','1']]) {
+        const opt = document.createElement('option');
+        opt.value = k; opt.textContent = label;
+        if (String(Math.round(Number(curVal))) === k) opt.selected = true;
+        input.appendChild(opt);
+      }
+    } else {
+      input = document.createElement('input');
+      input.type = 'number';
+      input.className = 'input-field';
+      input.style.cssText = 'width:80px;font-size:12px;padding:2px 4px';
+      input.step = factor > 1 ? String(1 / factor) : '1';
+
+      if (hasRange) {
+        // Scale raw model bounds to displayed (user-facing) values
+        input.min = String(rawMin / factor);
+        input.max = String(rawMax / factor);
+      } else {
+        // Fall back to type-level limits so garbage writes are caught in the UI
+        const fb = sizeBounds(r.size);
+        if (fb) {
+          input.min = String(fb.min / factor);
+          input.max = String(fb.max / factor);
+        }
+      }
+
+      if (curVal !== null && curVal !== undefined) input.value = curVal;
+    }
   }
 
-  const btnOk  = document.createElement('button');
+  const btnOk = document.createElement('button');
   btnOk.className = 'btn btn-ghost btn-sm';
   btnOk.textContent = '✓';
 
-  const btnX   = document.createElement('button');
+  const btnX = document.createElement('button');
   btnX.className = 'btn btn-ghost btn-sm';
   btnX.textContent = '✗';
 
+  // ── Inline range validation ───────────────────────────────────────────────
+  const validate = () => {
+    if (input.tagName === 'SELECT') { btnOk.disabled = false; input.style.borderColor = ''; return; }
+    const v  = parseFloat(input.value);
+    const lo = input.min !== '' ? parseFloat(input.min) : -Infinity;
+    const hi = input.max !== '' ? parseFloat(input.max) : Infinity;
+    const bad = isNaN(v) || v < lo || v > hi;
+    input.style.borderColor = bad ? 'var(--red,#f75f5f)' : '';
+    btnOk.disabled = bad;
+  };
+  input.addEventListener('input', validate);
+  validate();
+
+  // ── Unit label ────────────────────────────────────────────────────────────
   const wrap = document.createElement('span');
   wrap.style.cssText = 'display:inline-flex;gap:4px;align-items:center';
   wrap.appendChild(input);
+  if (r.unit && r.unit.trim()) {
+    const unitLbl = document.createElement('span');
+    unitLbl.style.cssText = 'font-size:11px;color:var(--muted);white-space:nowrap';
+    unitLbl.textContent = r.unit;
+    wrap.appendChild(unitLbl);
+  }
   wrap.appendChild(btnOk);
   wrap.appendChild(btnX);
 
+  // ── Info hint (only for non-state-map registers with useful description) ──
+  let hintEl = null;
+  if (r.info && r.info.trim() && !stateMap) {
+    hintEl = document.createElement('div');
+    hintEl.style.cssText = 'font-size:11px;color:var(--muted);margin-top:2px;max-width:220px;line-height:1.3';
+    hintEl.textContent = r.info.length > 80 ? r.info.slice(0, 80) + '…' : r.info;
+  }
+
   const origContent = valEl.textContent;
+  valEl.style.display = 'inline-block';
   valEl.textContent = '';
   valEl.appendChild(wrap);
+  if (hintEl) valEl.appendChild(hintEl);
   input.focus();
 
   const cancel = () => {
+    delete valEl.dataset.editing;
+    valEl.style.display = '';
     valEl.textContent = origContent;
-    delete triggerBtn.dataset.editing;
   };
 
   const confirm = async () => {
+    if (btnOk.disabled) return;
     const val = input.value;
     try {
       await api('POST', '/register/set', { register: addr, value: val });
@@ -1359,7 +1443,7 @@ $('btn-ver-install').addEventListener('click', async () => {
 });
 
 // ── Chart ─────────────────────────────────────────────────────────────────────
-const MAX_HISTORY      = 360;  // matches backend RING_SIZE (1 h at 10 s)
+const MAX_HISTORY      = 360;  // matches backend RING_SIZE; backend compacts rather than drops oldest
 const chartedRegisters = new Set();
 const recordedValues   = {};
 const CHART_COLORS     = ['#4f8ef7','#3ecf8e','#f7c948','#f75f5f','#a78bfa','#f97316','#06b6d4','#84cc16'];
@@ -1474,7 +1558,7 @@ function renderCharts() {
         <span class="sparkline-meta">${cur} ${escHtml(unit)} &nbsp;&middot;&nbsp; ↓${minV} ↑${maxV} &nbsp;&middot;&nbsp; ${pts.length} pts</span>
         ${closeBtn}
       </div>
-      <svg class="sparkline-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+      <svg class="sparkline-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" data-addr="${addr}">
         <defs>
           <linearGradient id="sg${addr}" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%"   stop-color="${color}" stop-opacity="0.25"/>
@@ -1495,6 +1579,123 @@ function renderCharts() {
   }).join('');
 
   panel.innerHTML = ruler + html;
+  attachChartInteractivity();
+}
+
+function attachChartInteractivity() {
+  const W = 600, H = 72, PAD_L = 52, PAD_R = 8, PAD_V = 8;
+  const plotW = W - PAD_L - PAD_R;
+  const plotH = H - PAD_V * 2;
+  const ns = 'http://www.w3.org/2000/svg';
+
+  // Recompute global time range (same scan as renderCharts)
+  let gTmin = Infinity, gTmax = -Infinity;
+  for (const addr of chartedRegisters) {
+    for (const p of (recordedValues[addr] || [])) {
+      if (p.t < gTmin) gTmin = p.t;
+      if (p.t > gTmax) gTmax = p.t;
+    }
+  }
+  if (!isFinite(gTmin)) return;
+  const gRange = gTmax - gTmin || 1;
+
+  $('chart-panel').querySelectorAll('svg[data-addr]').forEach(svg => {
+    const addr = Number(svg.dataset.addr);
+    const pts  = recordedValues[addr];
+    if (!pts || pts.length < 2) return;
+
+    const reg   = allRegs.find(r => Number(r.register) === addr);
+    const unit  = reg ? (reg.unit || '') : '';
+    const color = regColors[addr] || '#4f8ef7';
+
+    // Precompute Y scale for this register
+    const vmin  = Math.min(...pts.map(p => p.v));
+    const vmax  = Math.max(...pts.map(p => p.v));
+    const vspan = vmax - vmin || 1;
+    const toY   = v => PAD_V + plotH - ((v - vmin) / vspan) * plotH;
+
+    // Crosshair line
+    const crossLine = document.createElementNS(ns, 'line');
+    crossLine.setAttribute('y1', String(PAD_V));
+    crossLine.setAttribute('y2', String(H - PAD_V));
+    crossLine.setAttribute('stroke', 'rgba(255,255,255,0.35)');
+    crossLine.setAttribute('stroke-width', '1');
+    crossLine.setAttribute('stroke-dasharray', '3,2');
+    crossLine.style.display = 'none';
+    svg.appendChild(crossLine);
+
+    // Snap dot
+    const snapDot = document.createElementNS(ns, 'circle');
+    snapDot.setAttribute('r', '3.5');
+    snapDot.setAttribute('fill', color);
+    snapDot.setAttribute('stroke', '#1a1d2e');
+    snapDot.setAttribute('stroke-width', '1.5');
+    snapDot.style.display = 'none';
+    svg.appendChild(snapDot);
+
+    // Tooltip
+    const wrap    = svg.closest('.sparkline-wrap');
+    const tooltip = document.createElement('div');
+    tooltip.className = 'chart-tooltip';
+    tooltip.style.display = 'none';
+    wrap.appendChild(tooltip);
+
+    // Binary search: nearest point to timestamp t
+    const findNearest = t => {
+      let lo = 0, hi = pts.length - 1;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (pts[mid].t < t) lo = mid + 1; else hi = mid;
+      }
+      if (lo > 0 && Math.abs(pts[lo - 1].t - t) < Math.abs(pts[lo].t - t)) lo--;
+      return lo;
+    };
+
+    const fmtAge = ms => {
+      const s = Math.round(ms / 1000);
+      return s < 60 ? `${s}s` : s < 3600 ? `${Math.round(s / 60)}min` : `${(s / 3600).toFixed(1)}h`;
+    };
+
+    const show = clientX => {
+      const rect  = svg.getBoundingClientRect();
+      const svgX  = Math.max(PAD_L, Math.min(W - PAD_R, (clientX - rect.left) / rect.width * W));
+      const t     = gTmin + ((svgX - PAD_L) / plotW) * gRange;
+      const pt    = pts[findNearest(t)];
+
+      const sx = PAD_L + ((pt.t - gTmin) / gRange) * plotW;
+      const sy = toY(pt.v);
+
+      crossLine.setAttribute('x1', String(sx)); crossLine.setAttribute('x2', String(sx));
+      crossLine.style.display = '';
+      snapDot.setAttribute('cx', String(sx)); snapDot.setAttribute('cy', String(sy));
+      snapDot.style.display = '';
+
+      tooltip.innerHTML = `<span style="font-weight:600">${pt.v}${unit ? ' ' + escHtml(unit) : ''}</span><br>`
+                        + `<span style="color:var(--muted);font-size:10px">${fmtAge(Date.now() - pt.t)} ago</span>`;
+      tooltip.style.display = 'block';
+
+      // Position tooltip: left of dot, flip right if near left edge
+      const dotPxX   = svg.offsetLeft + (sx / W) * svg.offsetWidth;
+      const tipW     = tooltip.offsetWidth;
+      const wrapW    = wrap.offsetWidth;
+      const goLeft   = dotPxX - tipW - 10 > 0;
+      tooltip.style.left  = goLeft ? `${dotPxX - tipW - 6}px` : `${dotPxX + 10}px`;
+      tooltip.style.right = '';
+      tooltip.style.top   = `${svg.offsetTop + 4}px`;
+    };
+
+    const hide = () => {
+      crossLine.style.display = 'none';
+      snapDot.style.display   = 'none';
+      tooltip.style.display   = 'none';
+    };
+
+    svg.addEventListener('mousemove',  e => show(e.clientX));
+    svg.addEventListener('mouseleave', hide);
+    svg.addEventListener('touchstart',  e => { e.preventDefault(); show(e.touches[0].clientX); }, { passive: false });
+    svg.addEventListener('touchmove',   e => { e.preventDefault(); show(e.touches[0].clientX); }, { passive: false });
+    svg.addEventListener('touchend',    hide);
+  });
 }
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
