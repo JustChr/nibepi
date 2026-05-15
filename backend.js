@@ -40,7 +40,8 @@ const getQueue = [];
 const rmuQueue = [];
 var regQueue = [];
 var regCount = 0;
-var msgOut = Buffer.alloc(0);
+const accumBuf = Buffer.allocUnsafe(512); // pre-allocated; NIBE frames are ≤ ~128 bytes
+let accumLen = 0;
 var rmu_buffer = Buffer.alloc(0);
 var red = false;
 var fs_start = false;
@@ -185,12 +186,11 @@ function analyzeData(data) {
     if(debugMode && process.connected===true) {
         process.send({type:"log",data:Array.from(data),level:"core",kind:"RAW"});
     }
-    // Sometimes and ACK [0x06] is the first byte, and the second byte is the start. We shift it.
+    // Sometimes an ACK [0x06] is the first byte, and the second byte is the start. We shift it.
     if(data[0]===0x06 && data[1]===0x5C) {
-        //console.log('ACK')
         data = data.slice(1)
     } else if(data[0]===0x06 && data[1]===undefined) {
-        //console.log('ACK')
+        // standalone ACK — nothing to accumulate
     }
     //Check for start message, 0x5C if it's Nibe F series.
     if(fs_start===false) {
@@ -199,32 +199,39 @@ function analyzeData(data) {
         }
     }
     if(fs_start===true) {
-        msgOut = Buffer.concat([msgOut,data]);
-        if(msgOut.length>=3) {
+        // Guard against overflow from corrupted stream
+        if(accumLen + data.length > accumBuf.length) {
+            accumLen = 0;
+            fs_start = false;
+            return;
+        }
+        data.copy(accumBuf, accumLen);
+        accumLen += data.length;
+        if(accumLen>=3) {
                 if(startReset===true) {
                     startReset = false;
                     sendQueue.push([192,107,6,115,176,1,0,0,0,111]);
                 }
                 // Only decode objects we know
-                if(msgOut[2]!==0x19 && msgOut[2]!==0x1A && msgOut[2]!==0x1B && msgOut[2]!==0x1C&& msgOut[2]!==0x20) {
-                    msgOut = Buffer.alloc(0)
+                if(accumBuf[2]!==0x19 && accumBuf[2]!==0x1A && accumBuf[2]!==0x1B && accumBuf[2]!==0x1C && accumBuf[2]!==0x20) {
+                    accumLen = 0;
                     fs_start = false;
                 }
-                if(msgOut.length>=5) {
-                let msgLength = msgOut[4]+6;
+                if(accumLen>=5) {
+                let msgLength = accumBuf[4]+6;
                 // Check if we have the full length of the message.
-                if(msgOut.length>=msgLength) {
+                if(accumLen>=msgLength) {
                         // We have full length
-                        if(msgOut[2]==0x19 || msgOut[2]==0x1A || msgOut[2]==0x1B || msgOut[2]==0x1C) {
-                            if(checkACK[msgOut[2]]===undefined) {
-                                if(msgOut.length>=6) {
-                                    if(msgOut[msgOut[4]+6]===0x06 || msgOut[msgOut[4]+6]===0xC0) {
-                                        checkACK[msgOut[2]] = true;
-                                        msgOut = Buffer.alloc(0)
+                        if(accumBuf[2]==0x19 || accumBuf[2]==0x1A || accumBuf[2]==0x1B || accumBuf[2]==0x1C) {
+                            if(checkACK[accumBuf[2]]===undefined) {
+                                if(accumLen>=6) {
+                                    if(accumBuf[accumBuf[4]+6]===0x06 || accumBuf[accumBuf[4]+6]===0xC0) {
+                                        checkACK[accumBuf[2]] = true;
+                                        accumLen = 0;
                                         fs_start = false;
                                     } else {
-                                        checkACK[msgOut[2]] = false;
-                                        msgOut = Buffer.alloc(0)
+                                        checkACK[accumBuf[2]] = false;
+                                        accumLen = 0;
                                         fs_start = false;
                                     }
                                 } else {
@@ -233,8 +240,10 @@ function analyzeData(data) {
                                 return;
                             }
                         }
-                    msgOut = msgOut.slice(0, msgLength);
-                    checkMessage(msgOut).then(data => {
+                    // Pass a view of the current frame; accumLen is reset synchronously
+                    // inside checkMessage's Promise constructor before any async callbacks run.
+                    const frameView = accumBuf.subarray(0, msgLength);
+                    checkMessage(frameView).then(data => {
                             makeResponse(data).then(result => {
                                 if(startReset===false) {
                                     result = Array.from(result);
@@ -282,7 +291,7 @@ function analyzeData(data) {
 const checkMessage = (data) => {
     const promise = new Promise((resolve,reject) => {
         let error = data;
-        msgOut = Buffer.alloc(0);
+        accumLen = 0;
         fs_start = false;
         msgChecksum = data[data[4]+5];
         var calcChecksum = 0;
@@ -319,6 +328,7 @@ const makeResponse = (data) => {
                             }
                         }
                         myPort.write(lastMsg.data);
+                        resolve(data);
                     } else {
                         rmuQueue.push(lastMsg);
                         myPort.write(ack);

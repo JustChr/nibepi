@@ -218,7 +218,7 @@ function spawnBackend() {
     if (core) { try { core.kill(); } catch {} }
     const port = (config.serial && config.serial.port) || '/dev/ttyAMA0';
     log('info', `Spawning backend on ${port}`);
-    core = fork(BACKEND_FILE, { detached: true });
+    core = fork(BACKEND_FILE, { detached: true, execArgv: ['--max-old-space-size=48'] });
     core.send({ start: true, port });
     core.send({ type: 'debug', data: logLevel() === 'debug' });
     core.on('message', onBackendMessage);
