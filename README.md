@@ -16,14 +16,15 @@ The original project used Node-RED and a custom Pi image. This fork replaces all
 - **Browser config UI** — dark-themed, responsive, served directly from bridge.js on port 1880
 - **19 UI languages** — English, German, French, Spanish, Italian, Dutch, Portuguese, Swedish, Norwegian, Danish, Finnish, Polish, Czech, Slovak, Slovenian, Croatian, Romanian, Hungarian, Greek
 - **Home Assistant MQTT Discovery** — sensors, numbers, switches, and selects created automatically
-- **Register write from UI** — R/W registers have an inline edit button; state-map registers show a dropdown
+- **Register history charts** — up to 360 data points per register with adaptive downsampling; hover or tap to show a crosshair and tooltip with exact value and age
+- **Register write from UI** — R/W registers show an inline editor with type-appropriate controls: dropdown for state maps, validated number input with unit label and min/max from the pump model
 - **OTA updates** — check for and install new releases directly from the Status tab
 - **Alarm display & history** — active alarm shown in header and status panel; full history of up to 50 past alarms in Status tab
 - **Config backup/restore** — export config.json with one click; restore by uploading a previously exported file
 - **MQTT TLS** — optional encrypted connection to the broker (port 8883); custom CA cert path supported
 - **Web UI authentication** — optional HTTP Basic Auth; set your own username and password in Settings → Authentication before enabling
 - **Live log streaming** — tail the bridge log in real time from the browser
-- **Memory usage chart** — bridge + backend RSS sampled hourly, displayed as a 2-week sparkline
+- **Memory usage chart** — bridge + backend RSS sampled hourly, displayed as a 2-week sparkline with hover tooltip
 - **SD card protection** — read-only root filesystem with tmpfs for `/tmp` and `/var/log`; remounts rw only when saving settings
 - **Graceful restarts** — zombie mode keeps the pump connected during service restarts and OTA updates
 - **Hardware watchdog** — Pi auto-reboots if the bridge hangs
@@ -140,18 +141,20 @@ The script handles everything automatically:
 
 Total time: ~10 minutes, no further input required.
 
-### 4. Enable Modbus on the pump
+### 3. Enable Modbus on the pump
 
 1. Hold the **Back** button for ~7 seconds to open the service menu.
 2. Navigate to **System Settings 5.2**.
 3. Scroll down and enable **Modbus**.
 4. The pump may show a brief red alarm while NibePi finishes booting — this is normal.
 
-### 5. Open the config UI
+### 4. Open the config UI
 
 ```
 http://nibepi:1880
 ```
+
+On a fresh install with no existing config, the bridge automatically opens a 5-step setup wizard.
 
 ---
 
@@ -207,13 +210,24 @@ The pump model is detected automatically on first connection and saved to config
 
 Browse or search all registers for your pump model. Toggle individual registers on to start polling them. Active registers are polled continuously and their live values are shown in the table.
 
+Click the chart button (📊) on any active register to open a history sparkline. The chart keeps up to 360 samples with adaptive downsampling — recent data at 10 s resolution, older data thinned proportionally. Hover or tap anywhere on the chart to show a crosshair and tooltip with the exact value and sample age.
+
+R/W registers have an edit button. The editor adapts to the register type:
+- State map registers show a **dropdown** with labelled options
+- Numeric registers show a **number input** with the unit appended, pre-filled min/max bounds from the pump model, and inline validation
+
 ### Status & System tab
 
 | Control | Description |
 |---|---|
+| System Status | Pump model, firmware version, MQTT state, filesystem mode |
+| Alarm history | Up to 50 past alarms with start and end timestamps |
+| Memory chart | Bridge + backend RSS sampled hourly, last 2 weeks; hover or tap to inspect individual samples |
 | Filesystem mode | Toggle root filesystem between read-only (normal) and read-write (for manual edits) |
 | Log / Debug | Enable verbose logging and raw Modbus frame output |
-| Restart | Restart the bridge service (uses graceful zombie handover — pump stays connected) |
+| Restart | Restart the bridge service (graceful zombie handover — pump stays connected) |
+| Software | Check for updates and install new releases OTA |
+| Config | Export config to file or restore from a backup |
 | Live log | Streams the last 500 log lines in real time |
 
 ---
@@ -242,7 +256,7 @@ nibe/modbus/<register>/raw    ← raw scaled value
 
 ---
 
-## First-time setup
+## First-time setup wizard
 
 On a fresh install (no existing `/etc/nibepi/config.json`), the bridge automatically redirects to a 5-step setup wizard at `http://nibepi:1880/setup`:
 
