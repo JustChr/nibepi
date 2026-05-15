@@ -144,6 +144,7 @@
     background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
     padding: 10px 14px; margin-bottom: 8px; position: relative;
   }
+  #mem-chart-wrap { position: relative; }
   .chart-tooltip {
     position: absolute; pointer-events: none; z-index: 10;
     background: #1a1d2e; border: 1px solid var(--border); border-radius: 6px;
@@ -1113,7 +1114,7 @@ async function loadMemChart() {
       ${liveBackend !== null ? `<span><span style="color:#94a3b8">●</span> <span id="mem-live-backend">backend ${liveBackend} MB</span></span>` : ''}
       <span style="margin-left:auto">${pts.length} samples</span>
     </div>
-    <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block" preserveAspectRatio="none">
+    <svg id="mem-chart-svg" viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block" preserveAspectRatio="none">
       <defs>
         <linearGradient id="mg-bridge" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%"   stop-color="#4f8ef7" stop-opacity="0.2"/>
@@ -1137,6 +1138,110 @@ async function loadMemChart() {
     </div>`;
 
   _memLiveTimer = setInterval(refreshLiveLabel, 5000);
+
+  // ── Memory chart interactivity ──────────────────────────────────────────────
+  const memSvg = document.getElementById('mem-chart-svg');
+  if (memSvg && pts.length >= 2) {
+    const ns     = 'http://www.w3.org/2000/svg';
+    const plotW  = W - PAD_L - PAD_R;
+    const plotH  = H - PAD_V * 2;
+    const toY    = mb => PAD_V + plotH - (mb / mbRange) * plotH;
+    const toMBv  = b  => +(b / 1048576).toFixed(1);
+
+    const crossLine = document.createElementNS(ns, 'line');
+    crossLine.setAttribute('y1', String(PAD_V));
+    crossLine.setAttribute('y2', String(H - PAD_V));
+    crossLine.setAttribute('stroke', 'rgba(255,255,255,0.35)');
+    crossLine.setAttribute('stroke-width', '1');
+    crossLine.setAttribute('stroke-dasharray', '3,2');
+    crossLine.style.display = 'none';
+    memSvg.appendChild(crossLine);
+
+    const dotBridge = document.createElementNS(ns, 'circle');
+    dotBridge.setAttribute('r', '4'); dotBridge.setAttribute('fill', '#4f8ef7');
+    dotBridge.setAttribute('stroke', '#1a1d2e'); dotBridge.setAttribute('stroke-width', '1.5');
+    dotBridge.style.display = 'none';
+    memSvg.appendChild(dotBridge);
+
+    const hasBackend = pts.some(p => p.backend > 0);
+    let dotBackend;
+    if (hasBackend) {
+      dotBackend = document.createElementNS(ns, 'circle');
+      dotBackend.setAttribute('r', '4'); dotBackend.setAttribute('fill', '#94a3b8');
+      dotBackend.setAttribute('stroke', '#1a1d2e'); dotBackend.setAttribute('stroke-width', '1.5');
+      dotBackend.style.display = 'none';
+      memSvg.appendChild(dotBackend);
+    }
+
+    const tooltip = document.createElement('div');
+    tooltip.className = 'chart-tooltip';
+    tooltip.style.display = 'none';
+    wrap.appendChild(tooltip);
+
+    const findNearest = t => {
+      let lo = 0, hi = pts.length - 1;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (pts[mid].t < t) lo = mid + 1; else hi = mid;
+      }
+      if (lo > 0 && Math.abs(pts[lo - 1].t - t) < Math.abs(pts[lo].t - t)) lo--;
+      return lo;
+    };
+
+    const fmtAgeMs = ms => {
+      const s = Math.round(ms / 1000);
+      return s < 60 ? `${s}s` : s < 3600 ? `${Math.round(s / 60)}min` : `${(s / 3600).toFixed(1)}h`;
+    };
+
+    const show = clientX => {
+      const rect = memSvg.getBoundingClientRect();
+      const svgX = Math.max(PAD_L, Math.min(W - PAD_R, (clientX - rect.left) / rect.width * W));
+      const t    = tMin + ((svgX - PAD_L) / plotW) * tRange;
+      const pt   = pts[findNearest(t)];
+      const sx   = PAD_L + ((pt.t - tMin) / tRange) * plotW;
+
+      crossLine.setAttribute('x1', String(sx)); crossLine.setAttribute('x2', String(sx));
+      crossLine.style.display = '';
+
+      const bMB = toMBv(pt.bridge);
+      dotBridge.setAttribute('cx', String(sx)); dotBridge.setAttribute('cy', String(toY(bMB)));
+      dotBridge.style.display = '';
+
+      let tipHtml = `<span style="color:#4f8ef7;font-weight:600">${bMB} MB</span> bridge`;
+      if (hasBackend && pt.backend > 0) {
+        const eMB = toMBv(pt.backend);
+        dotBackend.setAttribute('cx', String(sx)); dotBackend.setAttribute('cy', String(toY(eMB)));
+        dotBackend.style.display = '';
+        tipHtml += `<br><span style="color:#94a3b8;font-weight:600">${eMB} MB</span> backend`;
+      } else if (dotBackend) {
+        dotBackend.style.display = 'none';
+      }
+      tipHtml += `<br><span style="color:var(--muted);font-size:10px">${fmtAgeMs(Date.now() - pt.t)} ago</span>`;
+
+      tooltip.innerHTML = tipHtml;
+      tooltip.style.display = 'block';
+
+      const dotPxX = memSvg.offsetLeft + (sx / W) * memSvg.offsetWidth;
+      const tipW   = tooltip.offsetWidth;
+      const goLeft = dotPxX - tipW - 10 > 0;
+      tooltip.style.left  = goLeft ? `${dotPxX - tipW - 6}px` : `${dotPxX + 10}px`;
+      tooltip.style.right = '';
+      tooltip.style.top   = `${memSvg.offsetTop + 4}px`;
+    };
+
+    const hide = () => {
+      crossLine.style.display = 'none';
+      dotBridge.style.display = 'none';
+      if (dotBackend) dotBackend.style.display = 'none';
+      tooltip.style.display   = 'none';
+    };
+
+    memSvg.addEventListener('mousemove',  e => show(e.clientX));
+    memSvg.addEventListener('mouseleave', hide);
+    memSvg.addEventListener('touchstart', e => { e.preventDefault(); show(e.touches[0].clientX); }, { passive: false });
+    memSvg.addEventListener('touchmove',  e => { e.preventDefault(); show(e.touches[0].clientX); }, { passive: false });
+    memSvg.addEventListener('touchend',   hide);
+  }
 }
 
 // ── Register write ────────────────────────────────────────────────────────────

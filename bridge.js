@@ -949,11 +949,20 @@ setInterval(() => {
         if (!ringBuffer[a]) ringBuffer[a] = [];
         ringBuffer[a].push({ t: now, v: activeValues[a].data });
         if (ringBuffer[a].length > RING_SIZE) {
-            // Keep oldest point, drop every odd-indexed point to halve resolution
-            const buf = ringBuffer[a];
-            const c = [buf[0]];
-            for (let i = 2; i < buf.length; i += 2) c.push(buf[i]);
-            ringBuffer[a] = c;
+            // Two-tier compaction: keep last 30 min verbatim + time-uniform history
+            // Avoids the exponential-gap bug where buf[0] becomes isolated over many cycles.
+            const buf     = ringBuffer[a];
+            const nRecent = Math.floor(RING_SIZE / 2);  // 180 pts — last ~30 min at 10 s
+            const nHist   = Math.ceil(RING_SIZE / 4);   // 90 pts — uniform over full history
+            const recent  = buf.slice(-nRecent);
+            const old     = buf.slice(0, buf.length - nRecent);
+            const hist    = [];
+            for (let k = 0; k < nHist && k < old.length; k++) {
+                const idx = old.length <= 1 ? 0
+                    : Math.round(k * (old.length - 1) / (nHist - 1));
+                hist.push(old[idx]);
+            }
+            ringBuffer[a] = hist.concat(recent);
         }
     }
 }, RING_INTERVAL);
