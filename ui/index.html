@@ -1021,7 +1021,8 @@ function updateTableCell(register, value, unit) {
   if (chartedRegisters.has(register)) {
     if (!recordedValues[register]) recordedValues[register] = [];
     recordedValues[register].push({ t: Date.now(), v: value });
-    if (recordedValues[register].length > MAX_HISTORY) recordedValues[register].shift();
+    if (recordedValues[register].length > MAX_HISTORY)
+      recordedValues[register] = compactHistory(recordedValues[register]);
     scheduleChartRender();
   }
 }
@@ -1548,8 +1549,32 @@ $('btn-ver-install').addEventListener('click', async () => {
 });
 
 // ── Chart ─────────────────────────────────────────────────────────────────────
-const MAX_HISTORY      = 360;  // matches backend RING_SIZE; backend compacts rather than drops oldest
+const MAX_HISTORY      = 360;
 const chartedRegisters = new Set();
+
+// Same two-tier time-uniform compaction as the server ring buffer.
+// Keeps the last ~30 min verbatim + uniformly-in-time decimated history.
+// Prevents exponential gap growth and preserves old data instead of dropping it.
+function compactHistory(buf) {
+  const nRecent = Math.floor(MAX_HISTORY / 2);  // 180 — verbatim recent
+  const nHist   = Math.ceil(MAX_HISTORY / 4);   // 90  — time-uniform history
+  const recent  = buf.slice(-nRecent);
+  const old     = buf.slice(0, buf.length - nRecent);
+  const hist    = [];
+  if (old.length > 0) {
+    const tMin  = old[0].t, tMax = old[old.length - 1].t;
+    const count = Math.min(nHist, old.length);
+    const tSpan = tMax - tMin;
+    let j = 0;
+    for (let k = 0; k < count; k++) {
+      const tTarget = tSpan > 0 ? tMin + k * tSpan / (count - 1) : tMin;
+      while (j < old.length - 1 &&
+             Math.abs(old[j + 1].t - tTarget) < Math.abs(old[j].t - tTarget)) j++;
+      hist.push(old[j]);
+    }
+  }
+  return hist.concat(recent);
+}
 const recordedValues   = {};
 const CHART_COLORS     = ['#4f8ef7','#3ecf8e','#f7c948','#f75f5f','#a78bfa','#f97316','#06b6d4','#84cc16'];
 let   chartColorIdx    = 0;

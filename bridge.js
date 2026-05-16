@@ -957,10 +957,18 @@ setInterval(() => {
             const recent  = buf.slice(-nRecent);
             const old     = buf.slice(0, buf.length - nRecent);
             const hist    = [];
-            for (let k = 0; k < nHist && k < old.length; k++) {
-                const idx = old.length <= 1 ? 0
-                    : Math.round(k * (old.length - 1) / (nHist - 1));
-                hist.push(old[idx]);
+            if (old.length > 0) {
+                const tOldMin = old[0].t;
+                const tOldMax = old[old.length - 1].t;
+                const count   = Math.min(nHist, old.length);
+                const tSpan   = tOldMax - tOldMin;
+                let j = 0;
+                for (let k = 0; k < count; k++) {
+                    const tTarget = tSpan > 0 ? tOldMin + k * tSpan / (count - 1) : tOldMin;
+                    while (j < old.length - 1 &&
+                           Math.abs(old[j + 1].t - tTarget) < Math.abs(old[j].t - tTarget)) j++;
+                    hist.push(old[j]);
+                }
             }
             ringBuffer[a] = hist.concat(recent);
         }
