@@ -240,44 +240,39 @@ function analyzeData(data) {
                                 return;
                             }
                         }
-                    // Pass a view of the current frame; accumLen is reset synchronously
-                    // inside checkMessage's Promise constructor before any async callbacks run.
                     const frameView = accumBuf.subarray(0, msgLength);
-                    checkMessage(frameView).then(data => {
-                            makeResponse(data).then(result => {
-                                if(startReset===false) {
-                                    result = Array.from(result);
-                                    let doubleFound = false;
-                                    for (i = 5; i < result.length - 1; i = i + 1) {
-                                        if(result[i]===92 && result[i+1]===92) {
-                                            result.splice(i, 1);
-                                            result[4] = result[4]-1;
-                                            doubleFound = true;
-                                        }
-                                    }
-                                    if(doubleFound===true) {
-                                        var calcChecksum = 0;
-                                        for(i = 2; i < (result[4] + 5); i++) {
-                                            calcChecksum ^= result[i];
-                                        }
-                                        result[result.length-1] = calcChecksum;
-                                    }
-                                    if(process.connected===true) {
-                                        process.send({type:"data",data:result,rmu:checkACK[result[2]]});
-                                        if(debugMode) process.send({type:"log",data:result,level:"debug",kind:"OK"});
-                                    }
+                    try {
+                        let result = makeResponse(checkMessage(frameView));
+                        if(startReset===false) {
+                            result = Array.from(result);
+                            let doubleFound = false;
+                            for (i = 5; i < result.length - 1; i = i + 1) {
+                                if(result[i]===92 && result[i+1]===92) {
+                                    result.splice(i, 1);
+                                    result[4] = result[4]-1;
+                                    doubleFound = true;
                                 }
-                            }, err => {
-
-                            })
-                        }, err => {
-                            err = Array.from(err);
-                            console.log(`CHKSUM ERROR: ${err}`)
-                            if(process.connected===true) {
-                                process.send({type:"log",data:err,level:"error",kind:"CHKSUM"});
                             }
-                            myPort.write(nack);
-                        })
+                            if(doubleFound===true) {
+                                var calcChecksum = 0;
+                                for(i = 2; i < (result[4] + 5); i++) {
+                                    calcChecksum ^= result[i];
+                                }
+                                result[result.length-1] = calcChecksum;
+                            }
+                            if(process.connected===true) {
+                                process.send({type:"data",data:result,rmu:checkACK[result[2]]});
+                                if(debugMode) process.send({type:"log",data:result,level:"debug",kind:"OK"});
+                            }
+                        }
+                    } catch(err) {
+                        err = Array.from(err);
+                        console.log(`CHKSUM ERROR: ${err}`)
+                        if(process.connected===true) {
+                            process.send({type:"log",data:err,level:"error",kind:"CHKSUM"});
+                        }
+                        myPort.write(nack);
+                    }
                 } else {
                     // Message is not ready yet.
                 }
@@ -288,63 +283,53 @@ function analyzeData(data) {
 
 
 
-const checkMessage = (data) => {
-    const promise = new Promise((resolve,reject) => {
-        let error = data;
-        accumLen = 0;
-        fs_start = false;
-        msgChecksum = data[data[4]+5];
-        var calcChecksum = 0;
-        for(i = 2; i < (data[4] + 5); i++) {
-            calcChecksum ^= data[i];
-        }
-        if((msgChecksum==calcChecksum) || (msgChecksum==0xC5 && calcChecksum==0x5C)) {
-            resolve(data);
-        } else {
-            reject(error)
-        }
-    });
-    return promise;
+function checkMessage(data) {
+    accumLen = 0;
+    fs_start = false;
+    const msgChecksum = data[data[4]+5];
+    let calcChecksum = 0;
+    for(let i = 2; i < (data[4] + 5); i++) {
+        calcChecksum ^= data[i];
+    }
+    if((msgChecksum==calcChecksum) || (msgChecksum==0xC5 && calcChecksum==0x5C)) {
+        return data;
+    } else {
+        throw data;
+    }
 }
-const makeResponse = (data) => {
-    const promise = new Promise((resolve,reject) => {
+function makeResponse(data) {
     // Read from heatpump
     if(data[2]==0x19 || data[2]==0x1A || data[2]==0x1B || data[2]==0x1C) { // < System
         if(data[3]==0x60) { // Send data message
             if(checkACK[data[2]]===false) {
-            if(rmuQueue.length!==0) {
-                var lastMsg = rmuQueue.pop();
-                if(lastMsg!==undefined) {
-                    if(Number(lastMsg.ackback[2])==Number(data[2])) {
-                        let address = lastMsg.address;
-                        if(process.connected===true) {
-                            process.send({type:"ack",data:{register:address,ack:true}});
-                            if(debugMode) process.send({type:"log",data:`Register: ${address}, Buffer: ${JSON.stringify(lastMsg)}`,level:"core",kind:"RMU SENT"});
-                        }
-                        if(lastMsg.data[3]===6) {
+                if(rmuQueue.length!==0) {
+                    var lastMsg = rmuQueue.pop();
+                    if(lastMsg!==undefined) {
+                        if(Number(lastMsg.ackback[2])==Number(data[2])) {
+                            let address = lastMsg.address;
                             if(process.connected===true) {
-                                process.send({type:"data",data:lastMsg.ackback,rmu:checkACK[lastMsg.ackback[2]]});
-                                if(debugMode) process.send({type:"log",data:lastMsg,level:"debug",kind:"RMU ACKBACK"});
+                                process.send({type:"ack",data:{register:address,ack:true}});
+                                if(debugMode) process.send({type:"log",data:`Register: ${address}, Buffer: ${JSON.stringify(lastMsg)}`,level:"core",kind:"RMU SENT"});
                             }
+                            if(lastMsg.data[3]===6) {
+                                if(process.connected===true) {
+                                    process.send({type:"data",data:lastMsg.ackback,rmu:checkACK[lastMsg.ackback[2]]});
+                                    if(debugMode) process.send({type:"log",data:lastMsg,level:"debug",kind:"RMU ACKBACK"});
+                                }
+                            }
+                            myPort.write(lastMsg.data);
+                        } else {
+                            rmuQueue.push(lastMsg);
+                            myPort.write(ack);
                         }
-                        myPort.write(lastMsg.data);
-                        resolve(data);
                     } else {
-                        rmuQueue.push(lastMsg);
                         myPort.write(ack);
-                        resolve(data);
                     }
                 } else {
                     myPort.write(ack);
-                    resolve(data);
                 }
-            } else {
-                myPort.write(ack);
-                resolve(data);
             }
-        } else {
-            resolve(data);
-        }
+            return data;
         } else if(data[3]==0x62) {
             // Message updates
             if(checkACK[data[2]]===false) {
@@ -353,68 +338,52 @@ const makeResponse = (data) => {
                     process.send({type:"log",data:logOut,level:"debug",kind:"RMU DATA"});
                 }
                 myPort.write(ack);
-                resolve(data);
-
-            } else {
-                resolve(data);
             }
-            resolve(data);
+            return data;
         } else if(data[3]==0x63) {
             if(checkACK[data[2]]===false) {
                 myPort.write([192,96,2,99,0,193]);
-                resolve(data);
-            } else {
-                resolve(data);
             }
+            return data;
         } else if(data[3]==0xEE) {
             if(checkACK[data[2]]===false) {
                 if(debugMode && process.connected===true) {
                     process.send({type:"log",data:"Sending RMU Version v259",level:"debug",kind:"RMU ACK"});
                 }
                 myPort.write([192,238,3,238,3,1,193]);
-                resolve(data);
-            } else {
-                resolve(data);
             }
+            return data;
         } else {
             if(checkACK[data[2]]===false) {
                 myPort.write(ack);
-                resolve(data);
-            } else {
-                resolve(data);
             }
+            return data;
         }
     } else if(data[3]==105 && data[4]==0x00) {
         if(getQueue!==undefined && getQueue.length!==0) {
             var lastMsg = getQueue.pop();
-            
             if(lastMsg!==undefined) {
                 myPort.write(lastMsg);
-                resolve(data);
             } else if(getQueue.length!==0) {
                 lastMsg = getQueue.pop();
                 if(lastMsg!==undefined) {
                     myPort.write(lastMsg);
-                    resolve(data);
                 } else {
                     myPort.write(ack);
-                    resolve(data);
                 }
             } else {
-                    myPort.write(ack);
-                    resolve(data);
+                myPort.write(ack);
             }
         } else {
             if(regQueue.length!==0) {
                 if(regCount>=regQueue.length) regCount = 0;
                 myPort.write(regQueue[regCount]);
                 regCount++;
-                resolve(data);
             } else {
                 myPort.write(ack);
-                resolve(data);
+            }
         }
-        }
+        return data;
     // Write to heatpump
     } else if(data[3]==107 && data[4]==0x00) {
         if(sendQueue.length!==0) {
@@ -426,25 +395,20 @@ const makeResponse = (data) => {
                     if(debugMode) process.send({type:"log",data:`Register: ${address}, Buffer: ${JSON.stringify(lastMsg)}`,level:"debug",kind:"SENT"});
                 }
                 myPort.write(lastMsg);
-                resolve(data);
             } else {
-                    myPort.write(ack);
-                    resolve(data);
+                myPort.write(ack);
             }
         } else {
-                myPort.write(ack);
-                resolve(data);
-        }
-    } else {
-            if(data[3]==109) {
-            } else if(data[3]==238) {
-            } else if(data[3]==106 || data[3]==104) {
-
-            } else {
-            }
             myPort.write(ack);
-            resolve(data);
+        }
+        return data;
+    } else {
+        if(data[3]==109) {
+        } else if(data[3]==238) {
+        } else if(data[3]==106 || data[3]==104) {
+        } else {
+        }
+        myPort.write(ack);
+        return data;
     }
-});
-return promise;
 }
