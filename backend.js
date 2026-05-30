@@ -143,7 +143,7 @@ process.on('message', (m) => {
   });
 
   function cleanExit() {
-      try { fs.unlinkSync(PID_FILE); } catch(e) {}
+      try { if(parseInt(fs.readFileSync(PID_FILE,'utf8'))===process.pid) fs.unlinkSync(PID_FILE); } catch(e) {}
       if(myPort && myPort.isOpen) {
           // Safety timer: if close() hangs (RS485 HAT mid-frame), force exit so the OS
           // releases the file descriptor and the new backend can claim the port.
