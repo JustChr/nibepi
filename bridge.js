@@ -218,7 +218,15 @@ function spawnBackend() {
     if (core) { try { core.kill(); } catch {} }
     const port = (config.serial && config.serial.port) || '/dev/ttyAMA0';
     log('info', `Spawning backend on ${port}`);
-    core = fork(BACKEND_FILE, { detached: true, execArgv: ['--max-old-space-size=48'] });
+    // MALLOC_ARENA_MAX caps glibc malloc arenas (default 8×cores = up to 32 on the
+    // 4-core Pi). Fewer arenas let freed chunks consolidate and be trimmed back to
+    // the OS instead of ratcheting the brk heap upward — the main cause of the slow
+    // backend RSS growth, which lives in glibc's [heap], not the V8 heap.
+    core = fork(BACKEND_FILE, {
+        detached: true,
+        execArgv: ['--max-old-space-size=48'],
+        env: { ...process.env, MALLOC_ARENA_MAX: '2' },
+    });
     core.send({ start: true, port });
     core.send({ type: 'debug', data: logLevel() === 'debug' });
     core.on('message', onBackendMessage);

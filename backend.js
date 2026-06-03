@@ -32,10 +32,15 @@ exec(`sudo chrt -a -f -p 99 ${process.pid}`, function(error, stdout, stderr) {
 });*/
 const { SerialPort: serialport } = require('serialport');
 const fs = require('fs');
-const nack = [0x15];
-const ack = [0x06];
+// Pre-allocated constant write frames. serialport does Buffer.from() on every
+// write of a plain array; reusing these Buffers avoids a native allocation per
+// frame in the hot path (the main driver of glibc brk-heap growth).
+const nack = Buffer.from([0x15]);
+const ack = Buffer.from([0x06]);
+const RMU_VERSION_FRAME = Buffer.from([192,238,3,238,3,1,193]);
+const RMU_63_FRAME = Buffer.from([192,96,2,99,0,193]);
 var myPort;
-const sendQueue = [[192,107,6,115,176,1,0,0,0,111]];
+const sendQueue = [Buffer.from([192,107,6,115,176,1,0,0,0,111])];
 const getQueue = [];
 const rmuQueue = [];
 var regQueue = [];
@@ -93,15 +98,19 @@ process.on('message', (m) => {
                     found = true;
                 }
             }
-            if(found===false) getQueue.unshift(m.data)
+            if(found===false) getQueue.unshift(Buffer.from(m.data))
         }
         ;
     } else if(m.type=="setData") {
-        sendQueue.push(m.data);
+        sendQueue.push(Buffer.from(m.data));
     } else if(m.type=="rmuSet") {
+        // .data is written to the port; .ackback/.address are still sent over IPC as arrays
+        if(m.data && Array.isArray(m.data.data)) m.data.data = Buffer.from(m.data.data);
         rmuQueue.push(m.data);
     } else if(m.type=="regRegister") {
-        regQueue = m.data;
+        // Convert poll frames to Buffers once, so the steady per-token write
+        // (the highest-frequency write) reuses them instead of allocating each time.
+        regQueue = Array.isArray(m.data) ? m.data.map(f => Buffer.from(f)) : [];
     } else if(m.type=="red") {
         red = m.data;
     } else if(m.type=="debug") {
@@ -210,7 +219,7 @@ function analyzeData(data) {
         if(accumLen>=3) {
                 if(startReset===true) {
                     startReset = false;
-                    sendQueue.push([192,107,6,115,176,1,0,0,0,111]);
+                    sendQueue.push(Buffer.from([192,107,6,115,176,1,0,0,0,111]));
                 }
                 // Only decode objects we know
                 if(accumBuf[2]!==0x19 && accumBuf[2]!==0x1A && accumBuf[2]!==0x1B && accumBuf[2]!==0x1C && accumBuf[2]!==0x20) {
@@ -342,7 +351,7 @@ function makeResponse(data) {
             return data;
         } else if(data[3]==0x63) {
             if(checkACK[data[2]]===false) {
-                myPort.write([192,96,2,99,0,193]);
+                myPort.write(RMU_63_FRAME);
             }
             return data;
         } else if(data[3]==0xEE) {
@@ -350,7 +359,7 @@ function makeResponse(data) {
                 if(debugMode && process.connected===true) {
                     process.send({type:"log",data:"Sending RMU Version v259",level:"debug",kind:"RMU ACK"});
                 }
-                myPort.write([192,238,3,238,3,1,193]);
+                myPort.write(RMU_VERSION_FRAME);
             }
             return data;
         } else {
