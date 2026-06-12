@@ -59,6 +59,19 @@ var portOpenRetries = 0;
 const PID_FILE = '/tmp/nibepi_backend.pid';
 let debugMode = false;
 
+// The serial hot path churns small Buffers whose backing stores live in native
+// malloc, not the V8 heap. With only ~3 MB of JS heap, V8 sees no pressure and
+// won't run an old-gen GC until ~64 MB of external growth — so dead Buffers
+// accumulate for days and the glibc brk arena ratchets up (RSS "leak").
+// Collect explicitly once external garbage passes a small threshold; a full GC
+// on this heap takes single-digit ms, well under the Modbus ACK deadline.
+// global.gc exists only when bridge.js forks us with --expose-gc.
+if (typeof global.gc === 'function') {
+    setInterval(() => {
+        if (process.memoryUsage().external > 8 * 1024 * 1024) global.gc();
+    }, 60000).unref();
+}
+
 function openPort() {
     myPort = new serialport({ path: portName, baudRate: 9600 });
     myPort.on('open', showPortOpen);

@@ -222,9 +222,12 @@ function spawnBackend() {
     // 4-core Pi). Fewer arenas let freed chunks consolidate and be trimmed back to
     // the OS instead of ratcheting the brk heap upward — the main cause of the slow
     // backend RSS growth, which lives in glibc's [heap], not the V8 heap.
+    // --expose-gc lets the backend collect dead serial Buffers explicitly: its JS
+    // heap is so small (~3 MB) that V8 never runs an old-gen GC on its own, letting
+    // external Buffer backing stores pile up for days (see backend.js).
     core = fork(BACKEND_FILE, {
         detached: true,
-        execArgv: ['--max-old-space-size=48'],
+        execArgv: ['--max-old-space-size=48', '--expose-gc'],
         env: { ...process.env, MALLOC_ARENA_MAX: '2' },
     });
     core.send({ start: true, port });
