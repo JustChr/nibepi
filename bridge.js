@@ -14,7 +14,6 @@ const CONFIG_FILE  = '/etc/nibepi/config.json';
 const MODELS_FILE  = path.join(__dirname, 'lib/models.json');
 const ALARMS_FILE  = path.join(__dirname, 'lib/alarms.json');
 const BACKEND_FILE = path.join(__dirname, 'backend.js');
-const PID_FILE     = '/tmp/nibepi_backend.pid';
 const UI_DIR       = path.join(__dirname, 'ui');
 const HTTP_PORT    = Number(process.env.PORT) || 1880;
 const LOG_BUFFER   = 500;
@@ -890,13 +889,7 @@ const server = http.createServer(async (req, res) => {
             }).catch(err => respond(res, 500, { error: err.message }));
 
         } else if (pathname === '/api/memhistory' && req.method === 'GET') {
-            const cur = { t: Date.now(), bridge: process.memoryUsage().rss };
-            try {
-                const pid    = fs.readFileSync(PID_FILE, 'utf8').trim();
-                const status = fs.readFileSync(`/proc/${pid}/status`, 'utf8');
-                const m      = status.match(/VmRSS:\s*(\d+)/);
-                cur.backend  = m ? parseInt(m[1]) * 1024 : 0;
-            } catch { cur.backend = 0; }
+            const cur = { t: Date.now(), bridge: process.memoryUsage().rss, backend: backendRss() };
             respond(res, 200, { history: memHistory, current: cur });
 
         } else if (pathname === '/api/version' && req.method === 'GET') {
@@ -991,16 +984,22 @@ const memHistory    = [];
 const MEM_RING_SIZE = 336;       // 14 days × 24 h
 const MEM_INTERVAL  = 3_600_000; // 1 h
 
-function sampleMemory() {
-    const bridge = process.memoryUsage().rss;
-    let backend = 0;
+// Read the backend's RSS straight from the live child PID we hold a handle to.
+// Earlier this read /tmp/nibepi_backend.pid, but that file is written once at
+// backend startup and never refreshed — so when systemd-tmpfiles sweeps /tmp
+// (or a handover removed it), backend RSS silently stuck at 0 forever while the
+// backend kept running. core.pid always points at the current live backend.
+function backendRss() {
     try {
-        const pid    = fs.readFileSync(PID_FILE, 'utf8').trim();
-        const status = fs.readFileSync(`/proc/${pid}/status`, 'utf8');
+        if (!core || !core.pid) return 0;
+        const status = fs.readFileSync(`/proc/${core.pid}/status`, 'utf8');
         const m      = status.match(/VmRSS:\s*(\d+)/);
-        if (m) backend = parseInt(m[1]) * 1024;
-    } catch {}
-    memHistory.push({ t: Date.now(), bridge, backend });
+        return m ? parseInt(m[1]) * 1024 : 0;
+    } catch { return 0; }
+}
+
+function sampleMemory() {
+    memHistory.push({ t: Date.now(), bridge: process.memoryUsage().rss, backend: backendRss() });
     if (memHistory.length > MEM_RING_SIZE) memHistory.shift();
 }
 
