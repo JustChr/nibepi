@@ -899,7 +899,7 @@ const server = http.createServer(async (req, res) => {
             checkLatestRelease((err, info) => {
                 if (err) { respond(res, 502, { error: err.message }); return; }
                 respond(res, 200, info);
-            });
+            }, true);
 
         } else if (pathname === '/api/update' && req.method === 'POST') {
             const { url, version: nextVer } = await readBody(req);
@@ -1010,8 +1010,8 @@ setInterval(sampleMemory, MEM_INTERVAL);
 let _cachedRelease = null;
 let _cacheTime     = 0;
 
-function checkLatestRelease(cb) {
-    if (_cachedRelease && Date.now() - _cacheTime < 3_600_000) {
+function checkLatestRelease(cb, force) {
+    if (!force && _cachedRelease && Date.now() - _cacheTime < 3_600_000) {
         return cb(null, _cachedRelease);
     }
     const opts = {
