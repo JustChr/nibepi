@@ -336,7 +336,7 @@ Check that `/usr/local/bin/node` exists and is v18:
 
 If the previous backend.js left a stale PID file:
 ```bash
-rm -f /tmp/nibepi_backend.pid
+rm -f /dev/shm/nibepi_backend.pid /tmp/nibepi_backend.pid
 sudo systemctl restart bridge
 ```
 

@@ -56,7 +56,12 @@ var startReset = true;
 let checkACK = {};
 var portName;
 var portOpenRetries = 0;
-const PID_FILE = '/tmp/nibepi_backend.pid';
+// /dev/shm, not /tmp: systemd-tmpfiles age-sweeps /tmp, which silently deleted
+// this file under a long-running backend. A missing PID file breaks the serial
+// handover — a new backend can't find the old zombie to signal SIGUSR2, so the
+// zombie keeps the port and the pump never reconnects. /dev/shm is tmpfs, pi-
+// writable (1777) and not age-swept.
+const PID_FILE = '/dev/shm/nibepi_backend.pid';
 let debugMode = false;
 
 // The serial hot path churns small Buffers whose backing stores live in native
@@ -84,17 +89,21 @@ process.on('message', (m) => {
     if(m.start===true) {
         if(m.port!==undefined) {
             portName = m.port;
-            // Kill any zombie instance still holding the serial port
+            // Signal any zombie instance still holding the serial port to hand over.
+            // Check both PID_FILE and the legacy /tmp path so an upgrade from a
+            // version that wrote /tmp still finds and releases its zombie.
             let hadZombie = false;
-            try {
-                if(fs.existsSync(PID_FILE)) {
-                    const oldPid = parseInt(fs.readFileSync(PID_FILE, 'utf8'));
+            for(const pf of [PID_FILE, '/tmp/nibepi_backend.pid']) {
+                try {
+                    if(!fs.existsSync(pf)) continue;
+                    const oldPid = parseInt(fs.readFileSync(pf, 'utf8'));
                     if(oldPid && oldPid !== process.pid) {
                         try { process.kill(oldPid, 'SIGUSR2'); hadZombie = true; } catch(e) {}
                     }
-                }
-                fs.writeFileSync(PID_FILE, process.pid.toString());
-            } catch(e) {}
+                } catch(e) {}
+            }
+            try { fs.writeFileSync(PID_FILE, process.pid.toString()); } catch(e) {}
+            try { fs.unlinkSync('/tmp/nibepi_backend.pid'); } catch(e) {}
             // Give the zombie time to close() before we try to open.
             setTimeout(openPort, hadZombie ? 1500 : 0);
         } else {
