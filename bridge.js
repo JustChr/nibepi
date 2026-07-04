@@ -35,6 +35,8 @@ const MIME = {
     '.css':  'text/css',
     '.json': 'application/json',
     '.ico':  'image/x-icon',
+    '.svg':  'image/svg+xml',
+    '.png':  'image/png',
 };
 
 const DEFAULT_CONFIG = {

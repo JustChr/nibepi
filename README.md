@@ -1,4 +1,4 @@
-# NibePi
+# <img src="ui/favicon.svg" width="28" alt="NibePi logo"> NibePi
 
 A standalone bridge that connects a NIBE heat pump to Home Assistant via MQTT. Runs on a Raspberry Pi Zero W fitted with an RS485 HAT inside the heat pump casing. No Node-RED, no cloud — ~150 MB less RAM used compared to the original project.
 
