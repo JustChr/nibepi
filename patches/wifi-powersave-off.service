@@ -1,0 +1,13 @@
+[Unit]
+Description=Disable WiFi power save on wlan0 (brcmfmac drops association otherwise)
+After=network.target wpa_supplicant.service
+Wants=network.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# wlan0 may not be ready the instant this runs; retry briefly, never fail the boot.
+ExecStart=/bin/sh -c 'for i in 1 2 3 4 5 6; do /sbin/iwconfig wlan0 power off 2>/dev/null && exit 0; sleep 5; done; exit 0'
+
+[Install]
+WantedBy=multi-user.target

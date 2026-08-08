@@ -5,8 +5,11 @@
 #   - hardware watchdog (auto-reboot on hang)
 #   - disable Bluetooth (unused, saves power)
 #   - bridge.service restart limits (reboot after 5 consecutive crashes)
+#   - WiFi power save off + network watchdog (wlan0 is the only link on a Zero W)
 
 set -e
+
+SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 
 sudo mount -o remount,rw /
 
@@ -61,7 +64,29 @@ else
     echo 'Bluetooth already disabled, skipping.'
 fi
 
-# ── 4. Bridge service restart limits ─────────────────────────────────────────
+# ── 4. WiFi power save off ────────────────────────────────────────────────────
+# brcmfmac on the Zero W enables power save by default ("brcmf_cfg80211_set_power_mgmt:
+# power save enabled" in dmesg) and is well known for silently dropping the
+# association and never coming back. The hardware watchdog cannot catch that:
+# the kernel stays healthy, so the box just quietly leaves the network.
+sudo cp "$SCRIPT_DIR/wifi-powersave-off.service" /etc/systemd/system/wifi-powersave-off.service
+sudo systemctl enable wifi-powersave-off.service >/dev/null 2>&1
+sudo /sbin/iwconfig wlan0 power off 2>/dev/null || true
+echo 'WiFi power save disabled.'
+
+# ── 5. Network watchdog ───────────────────────────────────────────────────────
+# Pings the default gateway once a minute and escalates: reassociate → bounce
+# wlan0 → reload brcmfmac → reboot (rate-limited to once per 6 h, because a
+# reboot cannot fix an upstream outage but does interrupt RS485).
+sudo mkdir -p /opt/nibepi
+sudo cp "$SCRIPT_DIR/netwatch.sh" /opt/nibepi/netwatch.sh
+sudo chmod +x /opt/nibepi/netwatch.sh
+sudo cp "$SCRIPT_DIR/nibepi-netwatch.service" /etc/systemd/system/nibepi-netwatch.service
+sudo cp "$SCRIPT_DIR/nibepi-netwatch.timer"   /etc/systemd/system/nibepi-netwatch.timer
+sudo systemctl enable nibepi-netwatch.timer >/dev/null 2>&1
+echo 'Network watchdog installed.'
+
+# ── 6. Bridge service restart limits ─────────────────────────────────────────
 sudo mkdir -p /etc/systemd/system/bridge.service.d
 sudo tee /etc/systemd/system/bridge.service.d/limits.conf > /dev/null << 'EOF'
 [Service]
@@ -72,6 +97,10 @@ EOF
 echo 'Bridge service restart limits applied.'
 
 sudo systemctl daemon-reload
+
+# Start the watchdog now rather than waiting for the next reboot — the whole
+# point is to be running before the next drop.
+sudo systemctl start nibepi-netwatch.timer >/dev/null 2>&1 || true
 
 sudo mount -o remount,ro /
 

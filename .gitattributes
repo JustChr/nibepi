@@ -1,0 +1,6 @@
+# These are executed on the Pi. CRLF would break the shebang and systemd parsing,
+# so keep them LF regardless of the checkout platform (core.autocrlf=true here).
+*.sh            text eol=lf
+*.service       text eol=lf
+*.timer         text eol=lf
+setup.sh        text eol=lf

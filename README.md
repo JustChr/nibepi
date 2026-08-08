@@ -28,6 +28,7 @@ The original project used Node-RED and a custom Pi image. This fork replaces all
 - **SD card protection** — read-only root filesystem with tmpfs for `/tmp` and `/var/log`; remounts rw only when saving settings
 - **Graceful restarts** — zombie mode keeps the pump connected during service restarts and OTA updates
 - **Hardware watchdog** — Pi auto-reboots if the bridge hangs
+- **Network watchdog** — recovers `wlan0` if WiFi drops, so the Pi cannot quietly vanish from the network
 
 ---
 
@@ -136,7 +137,7 @@ The script handles everything automatically:
 - Downloads the latest NibePi release from GitHub
 - Installs npm dependencies (compiles serialport, ~6 min)
 - Installs and enables the systemd service
-- Applies hardening (read-only root, tmpfs, watchdog, Bluetooth disabled)
+- Applies hardening (read-only root, tmpfs, watchdog, network watchdog, Bluetooth disabled)
 - Reboots if any boot-level changes were made
 
 Total time: ~10 minutes, no further input required.
@@ -178,8 +179,36 @@ sudo reboot
 | systemd watchdog timers (15 s / 2 min) | systemd kicks the watchdog; if it stops, the hardware watchdog fires |
 | Bluetooth disabled (`dtoverlay=disable-bt`) | Unused on this device; frees a CPU core and reduces background activity |
 | Bridge service restart limits | After 5 crashes within 2 minutes, triggers a full reboot instead of looping |
+| WiFi power save disabled | `brcmfmac` enables it by default and is prone to dropping the association for good |
+| Network watchdog (every 60 s) | `wlan0` is the Zero W's only link; the hardware watchdog cannot see it die |
 
 bridge.js remounts rw temporarily only when saving config, then returns to ro immediately after.
+
+### Network watchdog
+
+The hardware watchdog only catches a *hung* kernel. If `wlan0` silently drops its
+association the kernel stays perfectly healthy — systemd keeps kicking the watchdog,
+the RS485 loop keeps the heat pump happy, and the Pi just quietly disappears from the
+network until someone power-cycles it.
+
+`netwatch.sh` pings the default gateway once a minute and escalates only as far as it
+has to:
+
+| After | Action |
+|---|---|
+| 3 min | Re-assert power save off, `wpa_cli reassociate`, renew DHCP |
+| 6 min | Bounce `wlan0`, restart `wpa_supplicant`, renew DHCP |
+| 10 min | Reload the `brcmfmac` module |
+| 15 min | Reboot — **at most once per 6 hours** |
+
+The reboot is rate-limited on purpose: it interrupts RS485 for ~30 s and cannot fix an
+upstream fault (router down, power cut). If a reboot did not help, staying up and
+serving the heat pump beats looping.
+
+Events are appended to **`/boot/nibepi-netwatch.log`** — with association state, BSSID
+and signal level at the moment of failure. `/var/log` is tmpfs, so it is wiped by the
+very reboot that fixes the problem; `/boot` is a separate rw vfat mount that survives,
+and is only written on real incidents, so it costs nothing in SD wear.
 
 ---
 

@@ -1,0 +1,12 @@
+[Unit]
+Description=Run the NibePi network watchdog every minute
+
+[Timer]
+# Give WiFi a generous window to associate at boot before judging it offline.
+OnBootSec=3min
+OnUnitActiveSec=1min
+AccuracySec=10s
+Unit=nibepi-netwatch.service
+
+[Install]
+WantedBy=timers.target

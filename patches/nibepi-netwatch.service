@@ -1,0 +1,9 @@
+[Unit]
+Description=NibePi network watchdog (recover wlan0 without losing the box)
+After=network.target wpa_supplicant.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/nibepi/netwatch.sh
+# The script escalates on its own schedule; never let a stuck probe pile up.
+TimeoutStartSec=120
