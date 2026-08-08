@@ -1,0 +1,12 @@
+[Unit]
+Description=Sync the NibePi clock at boot and hourly
+
+[Timer]
+# Early, because the boot-time clock comes from a stale fake-hwclock value.
+OnBootSec=45s
+OnUnitActiveSec=1h
+AccuracySec=30s
+Unit=nibepi-timesync.service
+
+[Install]
+WantedBy=timers.target

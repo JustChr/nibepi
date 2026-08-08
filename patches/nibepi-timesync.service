@@ -1,0 +1,9 @@
+[Unit]
+Description=NibePi time sync (step the clock; fake-hwclock restores a stale time on ro root)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/nibepi/timesync.sh
+TimeoutStartSec=60

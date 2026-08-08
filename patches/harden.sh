@@ -9,7 +9,27 @@
 
 set -e
 
-SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+SCRIPT_DIR=$(cd "$(dirname "$0")" 2>/dev/null && pwd)
+RAW_BASE="https://raw.githubusercontent.com/JustChr/nibepi/master/patches"
+
+# Install a companion file from patches/. When harden.sh is run standalone via
+# `bash <(wget -qO- .../harden.sh)` there is no checkout to copy from, so fall
+# back to fetching the file directly.
+get_patch() {   # get_patch <name> <dest> <mode>
+    if [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/$1" ]; then
+        sudo install -m "$3" "$SCRIPT_DIR/$1" "$2"
+    else
+        _t=$(mktemp)
+        if wget -qO "$_t" "$RAW_BASE/$1"; then
+            sudo install -m "$3" "$_t" "$2"
+            rm -f "$_t"
+        else
+            rm -f "$_t"
+            echo "  ! could not obtain $1 — skipping"
+            return 1
+        fi
+    fi
+}
 
 sudo mount -o remount,rw /
 
@@ -69,7 +89,7 @@ fi
 # power save enabled" in dmesg) and is well known for silently dropping the
 # association and never coming back. The hardware watchdog cannot catch that:
 # the kernel stays healthy, so the box just quietly leaves the network.
-sudo cp "$SCRIPT_DIR/wifi-powersave-off.service" /etc/systemd/system/wifi-powersave-off.service
+get_patch wifi-powersave-off.service /etc/systemd/system/wifi-powersave-off.service 644
 sudo systemctl enable wifi-powersave-off.service >/dev/null 2>&1
 sudo /sbin/iwconfig wlan0 power off 2>/dev/null || true
 echo 'WiFi power save disabled.'
@@ -79,12 +99,27 @@ echo 'WiFi power save disabled.'
 # wlan0 → reload brcmfmac → reboot (rate-limited to once per 6 h, because a
 # reboot cannot fix an upstream outage but does interrupt RS485).
 sudo mkdir -p /opt/nibepi
-sudo cp "$SCRIPT_DIR/netwatch.sh" /opt/nibepi/netwatch.sh
-sudo chmod +x /opt/nibepi/netwatch.sh
-sudo cp "$SCRIPT_DIR/nibepi-netwatch.service" /etc/systemd/system/nibepi-netwatch.service
-sudo cp "$SCRIPT_DIR/nibepi-netwatch.timer"   /etc/systemd/system/nibepi-netwatch.timer
+get_patch netwatch.sh                /opt/nibepi/netwatch.sh                       755
+get_patch nibepi-netwatch.service    /etc/systemd/system/nibepi-netwatch.service   644
+get_patch nibepi-netwatch.timer      /etc/systemd/system/nibepi-netwatch.timer     644
 sudo systemctl enable nibepi-netwatch.timer >/dev/null 2>&1
 echo 'Network watchdog installed.'
+
+# ── 5b. Time sync ─────────────────────────────────────────────────────────────
+# fake-hwclock cannot save the time on a read-only root, so every boot starts
+# from a stale timestamp. ntpd was unreliable here (never reached a single pool
+# server) and refuses to step offsets over 1000 s anyway; sntp -S always steps.
+# Correct time matters because it stamps the netwatch incident log.
+get_patch timesync.sh              /opt/nibepi/timesync.sh                       755
+get_patch nibepi-timesync.service  /etc/systemd/system/nibepi-timesync.service   644
+get_patch nibepi-timesync.timer    /etc/systemd/system/nibepi-timesync.timer     644
+sudo systemctl enable nibepi-timesync.timer >/dev/null 2>&1
+# ntpd and the sntp timer would fight over the clock; the timer is the one that works.
+if systemctl list-unit-files 2>/dev/null | grep -q '^ntp\.service'; then
+    sudo systemctl disable --now ntp >/dev/null 2>&1 || true
+    echo 'Disabled ntpd in favour of the sntp timer.'
+fi
+echo 'Time sync installed.'
 
 # ── 6. Bridge service restart limits ─────────────────────────────────────────
 sudo mkdir -p /etc/systemd/system/bridge.service.d

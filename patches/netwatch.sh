@@ -26,7 +26,9 @@ L4_REBOOT=15
 
 say() {
     printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$EVENTLOG" 2>/dev/null
-    logger -t nibepi-netwatch "$*" 2>/dev/null
+    # stdout, not logger: nothing serves /dev/log here (rsyslog inactive), but
+    # systemd captures a oneshot service's stdout into the journal.
+    echo "$*"
 }
 
 # Radio state at the moment of trouble — the diagnostics we wished we had.

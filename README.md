@@ -181,6 +181,7 @@ sudo reboot
 | Bridge service restart limits | After 5 crashes within 2 minutes, triggers a full reboot instead of looping |
 | WiFi power save disabled | `brcmfmac` enables it by default and is prone to dropping the association for good |
 | Network watchdog (every 60 s) | `wlan0` is the Zero W's only link; the hardware watchdog cannot see it die |
+| Time sync via `sntp` timer | `fake-hwclock` can't save on a read-only root, so every boot starts from a stale clock |
 
 bridge.js remounts rw temporarily only when saving config, then returns to ro immediately after.
 
@@ -209,6 +210,21 @@ Events are appended to **`/boot/nibepi-netwatch.log`** — with association stat
 and signal level at the moment of failure. `/var/log` is tmpfs, so it is wiped by the
 very reboot that fixes the problem; `/boot` is a separate rw vfat mount that survives,
 and is only written on real incidents, so it costs nothing in SD wear.
+
+### Time sync
+
+`fake-hwclock` cannot write its saved timestamp while the root filesystem is read-only,
+so the Pi boots with a stale clock every time and something has to correct it. `ntpd` was
+not up to the job here — it listened correctly and had `-g`, but never established a
+single pool association (`reach 0` on every peer), leaving the clock 23 minutes out — and
+it refuses to step offsets beyond 1000 s regardless.
+
+`timesync.sh` runs `sntp -S` at boot and hourly, preferring the LAN gateway (which answers
+even when the WAN is down) and falling back to `pool.ntp.org`. `sntp -S` steps the clock
+no matter how large the offset.
+
+This is not cosmetic: the clock stamps the netwatch incident log, which is the only
+forensic record that survives a reboot.
 
 ---
 

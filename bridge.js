@@ -927,6 +927,11 @@ const server = http.createServer(async (req, res) => {
                 'sudo cp "$D/patches/bridge.service" /etc/systemd/system/bridge.service',
                 // Cleanup steps are best-effort — don't let them abort before the restart
                 'set +e',
+                // Apply hardening too. Without this the OTA path silently skips every
+                // change in patches/ (watchdogs, power save, time sync) while still
+                // bumping the version, which looks like a successful update but is not.
+                // harden.sh leaves the root fs ro, so it must run before the remount.
+                'bash "$D/patches/harden.sh" || echo "harden.sh failed (app update still applied)"',
                 'sudo systemctl daemon-reload',
                 'sudo mount -o remount,ro /',
                 'rm -rf /tmp/nibepi-ota /tmp/nibepi-ota.tar.gz',
