@@ -19,7 +19,14 @@ fi
 REPO_DIR="/tmp/nibepi-master"
 INSTALL_DIR="/opt/nibepi"
 CONFIG_DIR="/etc/nibepi"
-NODE_TARGET="v18.20.8"
+
+# Bookworm moved the FAT boot partition to /boot/firmware; on Bullseye it is /boot.
+# Detect rather than hard-code so this works on both.
+if [ -d /boot/firmware ]; then BOOT_DIR=/boot/firmware; else BOOT_DIR=/boot; fi
+
+# v22 is the newest Node with armv6l builds — 24 and later are not built for
+# ARMv6 at all, so this is the ceiling on a Pi Zero W, not a preference.
+NODE_TARGET="v22.23.2"
 NODE_URL="https://unofficial-builds.nodejs.org/download/release/${NODE_TARGET}/node-${NODE_TARGET}-linux-armv6l.tar.xz"
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -60,9 +67,10 @@ else
 fi
 
 # Enable hardware UART for RS485 (Pi Zero W: PL011 is occupied by BT by default;
-# disable-bt in harden.sh frees it — enable_uart=1 makes it available to userspace)
-if ! grep -q 'enable_uart=1' /boot/config.txt; then
-    echo 'enable_uart=1' | sudo tee -a /boot/config.txt > /dev/null
+# disable-bt in harden.sh frees it — enable_uart=1 makes it available to userspace).
+# On Trixie config.txt lives under /boot/firmware, hence $BOOT_DIR.
+if ! grep -q 'enable_uart=1' "$BOOT_DIR/config.txt"; then
+    echo 'enable_uart=1' | sudo tee -a "$BOOT_DIR/config.txt" > /dev/null
     touch /tmp/nibepi-reboot-needed
     ok "Hardware UART enabled."
 else
@@ -70,8 +78,8 @@ else
 fi
 
 # Disable serial console so ttyAMA0 is free for RS485
-if grep -qE 'console=(serial0|ttyAMA0)' /boot/cmdline.txt; then
-    sudo sed -i 's/console=serial0,[0-9]* //g;s/console=ttyAMA0,[0-9]* //g' /boot/cmdline.txt
+if grep -qE 'console=(serial0|ttyAMA0)' "$BOOT_DIR/cmdline.txt"; then
+    sudo sed -i 's/console=serial0,[0-9]* //g;s/console=ttyAMA0,[0-9]* //g' "$BOOT_DIR/cmdline.txt"
     touch /tmp/nibepi-reboot-needed
     ok "Serial console disabled."
 else
@@ -93,15 +101,22 @@ else
     ok "Node.js $(/usr/local/bin/node --version) installed."
 fi
 
-# ── 4. Download repo ───────────────────────────────────────────────────────────
-step "Downloading NibePi from GitHub..."
-rm -rf /tmp/nibepi-src /tmp/nibepi.tar.gz
-wget -q --show-progress -O /tmp/nibepi.tar.gz "$REPO_URL"
-mkdir -p /tmp/nibepi-src
-tar -xf /tmp/nibepi.tar.gz -C /tmp/nibepi-src --strip-components=1
-rm -f /tmp/nibepi.tar.gz
-REPO_DIR=/tmp/nibepi-src
-ok "Downloaded."
+# ── 4. Obtain repo ─────────────────────────────────────────────────────────────
+# NIBEPI_LOCAL_SRC lets you install a working tree that has not been released
+# yet — needed to test changes on the Pi before tagging them.
+if [ -n "$NIBEPI_LOCAL_SRC" ] && [ -d "$NIBEPI_LOCAL_SRC" ]; then
+    REPO_DIR="$NIBEPI_LOCAL_SRC"
+    step "Using local source $REPO_DIR (skipping download)"
+else
+    step "Downloading NibePi from GitHub..."
+    rm -rf /tmp/nibepi-src /tmp/nibepi.tar.gz
+    wget -q --show-progress -O /tmp/nibepi.tar.gz "$REPO_URL"
+    mkdir -p /tmp/nibepi-src
+    tar -xf /tmp/nibepi.tar.gz -C /tmp/nibepi-src --strip-components=1
+    rm -f /tmp/nibepi.tar.gz
+    REPO_DIR=/tmp/nibepi-src
+    ok "Downloaded."
+fi
 
 # ── 5. Install app files ───────────────────────────────────────────────────────
 step "Installing to $INSTALL_DIR..."
@@ -126,7 +141,9 @@ if [ "$PKG_HASH" = "$CACHED_HASH" ] && [ -d "$INSTALL_DIR/node_modules/serialpor
 else
     step "Installing npm dependencies (~6 min on Pi Zero W)..."
     SWAP_CREATED=0
-    if [ ! -f /swapfile ]; then
+    # Trixie ships dphys-swapfile enabled, so only add our own if there is no
+    # active swap at all — otherwise we'd stack a second file on the SD card.
+    if [ -z "$(swapon --show --noheadings 2>/dev/null)" ]; then
         echo "  Adding 512 MB swap for compilation..."
         sudo fallocate -l 512M /swapfile
         sudo chmod 600 /swapfile
@@ -164,7 +181,8 @@ step "Applying hardening..."
 bash "$REPO_DIR/patches/harden.sh"
 
 # ── 10. Cleanup ────────────────────────────────────────────────────────────────
-rm -rf /tmp/nibepi-src
+# Never delete a caller-supplied local source tree.
+[ -n "$NIBEPI_LOCAL_SRC" ] || rm -rf /tmp/nibepi-src
 
 # ── 11. Start or reboot ────────────────────────────────────────────────────────
 if [ -f /tmp/nibepi-reboot-needed ]; then

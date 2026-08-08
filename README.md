@@ -120,6 +120,15 @@ Before writing, click the ⚙ settings icon and configure:
 | WiFi SSID / password | your network |
 | WiFi country | your country code |
 
+Use Imager's customisation rather than dropping a `wpa_supplicant.conf` on the boot
+partition — that is the Bullseye-era mechanism, and on Bookworm/Trixie the network is
+managed by NetworkManager, which Imager configures correctly.
+
+Tested on **Raspbian 13 (Trixie)** on a Pi Zero W. `setup.sh` and `harden.sh` detect
+whether the boot partition is at `/boot` (Bullseye) or `/boot/firmware` (Bookworm and
+later), and whether the network is run by NetworkManager or `dhcpcd`/`wpa_supplicant`,
+so both generations work.
+
 ### 2. Run the setup script
 
 Insert the card, power on the Pi, and SSH in once it appears on the network:
@@ -133,7 +142,7 @@ The script handles everything automatically:
 - Expands the filesystem to the full card
 - Configures the hardware UART for RS485 (disables serial console, frees UART from Bluetooth)
 - Sets hostname to `nibepi` if not already set
-- Installs Node.js 18 for ARMv6l
+- Installs Node.js 22 for ARMv6l (v22 is the newest Node built for ARMv6 — 24 and later are not, so this is the ceiling on a Zero W)
 - Downloads the latest NibePi release from GitHub
 - Installs npm dependencies (compiles serialport, ~6 min)
 - Installs and enables the systemd service
@@ -181,7 +190,8 @@ sudo reboot
 | Bridge service restart limits | After 5 crashes within 2 minutes, triggers a full reboot instead of looping |
 | WiFi power save disabled | `brcmfmac` enables it by default and is prone to dropping the association for good |
 | Network watchdog (every 60 s) | `wlan0` is the Zero W's only link; the hardware watchdog cannot see it die |
-| Time sync via `sntp` timer | `fake-hwclock` can't save on a read-only root, so every boot starts from a stale clock |
+| `resolv.conf` → `/run` symlink | a read-only root blocks NetworkManager from writing it, silently killing all DNS |
+| Time sync | `fake-hwclock` can't save on a read-only root, so every boot starts from a stale clock |
 
 bridge.js remounts rw temporarily only when saving config, then returns to ro immediately after.
 
@@ -211,20 +221,35 @@ and signal level at the moment of failure. `/var/log` is tmpfs, so it is wiped b
 very reboot that fixes the problem; `/boot` is a separate rw vfat mount that survives,
 and is only written on real incidents, so it costs nothing in SD wear.
 
+### DNS on a read-only root
+
+Worth knowing about, because the symptom is confusing. NetworkManager rewrites
+`/etc/resolv.conf` whenever the link comes up, and a read-only root blocks that
+**silently** — you end up with a `resolv.conf` holding comments and no nameserver.
+
+Nothing obviously breaks: the link is up, ping by IP works, and MQTT keeps flowing
+because the broker is configured as a literal address. But every hostname lookup fails,
+so time sync never resolves a pool server and update checks cannot reach GitHub.
+
+`harden.sh` symlinks `/etc/resolv.conf` to NetworkManager's runtime copy under `/run`
+(tmpfs), which it can always write.
+
 ### Time sync
 
 `fake-hwclock` cannot write its saved timestamp while the root filesystem is read-only,
-so the Pi boots with a stale clock every time and something has to correct it. `ntpd` was
-not up to the job here — it listened correctly and had `-g`, but never established a
-single pool association (`reach 0` on every peer), leaving the clock 23 minutes out — and
-it refuses to step offsets beyond 1000 s regardless.
+so the Pi boots with a stale clock every time and something has to correct it. This is
+not cosmetic: the clock stamps the netwatch incident log, the only forensic record that
+survives a reboot.
 
-`timesync.sh` runs `sntp -S` at boot and hourly, preferring the LAN gateway (which answers
-even when the WAN is down) and falling back to `pool.ntp.org`. `sntp -S` steps the clock
-no matter how large the offset.
+On Trixie, `systemd-timesyncd` handles it and `harden.sh` leaves it alone — but note it
+is useless until DNS works, which is why the `resolv.conf` fix above matters.
 
-This is not cosmetic: the clock stamps the netwatch incident log, which is the only
-forensic record that survives a reboot.
+On older images `harden.sh` installs `timesync.sh`, which runs `sntp -S` at boot and
+hourly, preferring the LAN gateway (it answers even when the WAN is down) and falling
+back to `pool.ntp.org`. That fallback exists because `ntpd` proved unreliable: it
+listened correctly and had `-g`, yet never established a single pool association
+(`reach 0` on every peer), leaving the clock 23 minutes out — and it refuses to step
+offsets beyond 1000 s regardless. `sntp -S` steps no matter how large the offset.
 
 ---
 
