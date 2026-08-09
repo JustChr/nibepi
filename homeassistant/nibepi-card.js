@@ -25,7 +25,7 @@
  *     node homeassistant/gen-alarms.js
  */
 
-const CARD_VERSION = '3.2.0';
+const CARD_VERSION = '3.2.1';
 
 // Card content width, in px, at which the landscape sheet takes over. The
 // landscape drawing is 1040 units wide, so below this it renders at under ~0.87×
@@ -887,10 +887,25 @@ class NibepiFlowCard extends HTMLElement {
         if (!card) return;
         const forced = this._cfg.layout;
         const wideAt = Number(this._cfg.wide_at) || WIDE_AT;
-        card.classList.toggle('wide',
-            forced === 'wide' || (forced !== 'tall' && w >= wideAt));
+        const wide = forced === 'wide' || (forced !== 'tall' && w >= wideAt);
+        card.classList.toggle('wide', wide);
         card.classList.toggle('narrow', w > 0 && w < NARROW_AT);
+
+        // Announce the decision once per change. Whether the card came out
+        // portrait because it is genuinely narrow or because a stale copy of
+        // this file is still cached is otherwise unanswerable from the outside,
+        // and /local/ is served with a month of max-age.
+        if (w > 0 && wide !== this._wasWide) {
+            this._wasWide = wide;
+            console.info(`NIBEPI-FLOW-CARD v${CARD_VERSION}: card ${Math.round(w)}px `
+                + `-> ${wide ? 'landscape' : 'portrait'} `
+                + `(layout: ${forced}, wide_at: ${wideAt})`);
+        }
     }
+
+    /** So a browser console can answer "which build is actually running?" with
+     *  customElements.get('nibepi-flow-card').version */
+    static get version() { return CARD_VERSION; }
 
     connectedCallback() { if (this._built) this._measure(); }
 

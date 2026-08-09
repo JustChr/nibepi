@@ -225,10 +225,31 @@ cp nibepi-card.js /config/www/nibepi-card.js
 
 Register it under **Settings → Dashboards → ⋮ → Resources → Add resource**:
 
-- URL `/local/nibepi-card.js`
+- URL `/local/nibepi-card.js?v=3.2.1`
 - Type **JavaScript module**
 
-Then hard-reload the browser. The console should log `NIBEPI-FLOW-CARD v3.2.0`.
+**Keep the `?v=` and bump it on every update.** Home Assistant serves `/local/`
+with `Cache-Control: max-age=2678400` — thirty-one days — so a browser that has
+loaded the card once will not go back for a new one, no matter what you copy over
+the file on disk. Changing the query string is what actually invalidates it; a
+normal reload will not.
+
+The console should log `NIBEPI-FLOW-CARD v3.2.1` on load. If it reports an older
+version, the browser is serving a cached copy and nothing else you change will
+have any effect. Two ways to check what is really running:
+
+```js
+customElements.get('nibepi-flow-card').version     // -> "3.2.1"
+```
+
+and the card logs its own layout decision whenever it changes:
+
+```
+NIBEPI-FLOW-CARD v3.2.1: card 1532px -> landscape (layout: auto, wide_at: 900)
+```
+
+That line distinguishes the two reasons the schematic can come out portrait — a
+genuinely narrow card, or a stale script — without any guessing.
 
 ### 4. Install apexcharts-card
 
