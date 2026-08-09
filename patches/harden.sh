@@ -45,14 +45,18 @@ sudo mount -o remount,rw /
 # filesystem silently stays writable after every update. It also writes swap to
 # the SD card, which is precisely what this hardening exists to prevent.
 # Pure zram keeps the compressed RAM swap without either drawback.
+# Written as a drop-in, not by editing /etc/rpi/swap.conf: that file is a dpkg
+# conffile, so modifying it makes every rpi-swap upgrade stop and ask whether to
+# keep your version — and answering wrong silently restores the swap file and
+# un-hardens the root filesystem. Drop-ins have higher precedence and leave the
+# packaged file untouched.
 if [ -f /etc/rpi/swap.conf ]; then
-    if grep -qE '^[[:space:]]*Mechanism[[:space:]]*=' /etc/rpi/swap.conf; then
-        sudo sed -i -E 's/^[[:space:]]*Mechanism[[:space:]]*=.*/Mechanism=zram/' /etc/rpi/swap.conf
-        echo 'Swap mechanism set to zram-only.'
-    else
-        printf '\n[Main]\nMechanism=zram\n' | sudo tee -a /etc/rpi/swap.conf > /dev/null
-        echo 'Swap mechanism set to zram-only (no backing file on /).'
-    fi
+    sudo mkdir -p /etc/rpi/swap.conf.d
+    sudo tee /etc/rpi/swap.conf.d/99-nibepi-zram-only.conf > /dev/null << 'EOF'
+[Main]
+Mechanism=zram
+EOF
+    echo 'Swap mechanism set to zram-only (drop-in).'
     touch /tmp/nibepi-reboot-needed
 fi
 
