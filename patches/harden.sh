@@ -37,6 +37,25 @@ get_patch() {   # get_patch <name> <dest> <mode>
 
 sudo mount -o remount,rw /
 
+# ── 0. Keep swap off the root filesystem ──────────────────────────────────────
+# Raspberry Pi OS Trixie defaults /etc/rpi/swap.conf to Mechanism=auto, which
+# resolves to "zram+file": compressed swap in RAM *plus* writeback to /var/swap,
+# attached through a loop device. That loop holds a file on / open read-write, so
+# `mount -o remount,ro /` fails with "mount point is busy" forever — the root
+# filesystem silently stays writable after every update. It also writes swap to
+# the SD card, which is precisely what this hardening exists to prevent.
+# Pure zram keeps the compressed RAM swap without either drawback.
+if [ -f /etc/rpi/swap.conf ]; then
+    if grep -qE '^[[:space:]]*Mechanism[[:space:]]*=' /etc/rpi/swap.conf; then
+        sudo sed -i -E 's/^[[:space:]]*Mechanism[[:space:]]*=.*/Mechanism=zram/' /etc/rpi/swap.conf
+        echo 'Swap mechanism set to zram-only.'
+    else
+        printf '\n[Main]\nMechanism=zram\n' | sudo tee -a /etc/rpi/swap.conf > /dev/null
+        echo 'Swap mechanism set to zram-only (no backing file on /).'
+    fi
+    touch /tmp/nibepi-reboot-needed
+fi
+
 # ── 1. Root filesystem read-only on boot ──────────────────────────────────────
 # Ensure the root fstab entry has 'ro' so every boot starts with a protected
 # filesystem. bridge.js remounts rw temporarily only when saving config.

@@ -182,6 +182,7 @@ sudo reboot
 
 | Change | Why |
 |---|---|
+| Swap forced to zram-only | Trixie's default `zram+file` keeps a loop-mounted swap file open on `/`, which blocks `remount,ro` entirely |
 | Root filesystem `ro` in fstab | Boots read-only every time — the single biggest protection for the SD card |
 | `/tmp` and `/var/log` → tmpfs (RAM) | Eliminates the most common sources of runtime SD writes |
 | Hardware watchdog enabled (`dtparam=watchdog=on`) | Pi reboots automatically if the kernel hangs or freezes |
@@ -221,6 +222,21 @@ Events are appended to **`/boot/nibepi-netwatch.log`** — with association stat
 and signal level at the moment of failure. `/var/log` is tmpfs, so it is wiped by the
 very reboot that fixes the problem; `/boot` is a separate rw vfat mount that survives,
 and is only written on real incidents, so it costs nothing in SD wear.
+
+### Swap vs. the read-only root
+
+Raspberry Pi OS Trixie ships `/etc/rpi/swap.conf` with `Mechanism=auto`, which resolves to
+**`zram+file`**: compressed swap in RAM *plus* writeback to `/var/swap`, attached through a
+loop device.
+
+That loop holds a file on `/` open read-write, so `mount -o remount,ro /` fails with
+`mount point is busy` — permanently. The symptom is subtle: the Pi boots read-only from
+fstab, but the moment anything remounts it rw (an update saving config, an OTA) it can
+never go back, and stays writable until the next reboot. It also writes swap to the SD
+card, exactly what the read-only root exists to prevent.
+
+`harden.sh` sets `Mechanism=zram`. Compressed RAM swap is retained, `/var/swap` and the
+loop device are gone, and the root filesystem can return to read-only.
 
 ### DNS on a read-only root
 
