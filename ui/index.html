@@ -445,7 +445,6 @@
     <div id="alarm-row" style="display:none;margin-top:14px;align-items:center;gap:12px;flex-wrap:wrap">
       <span id="st-alarm" class="fs-badge ro"></span>
       <button class="btn btn-danger" id="btn-alarm-reset" data-i18n="stat.alarmReset"></button>
-      <span id="st-alarm-hint" style="display:none;font-size:0.82em;color:var(--color-warn,#b45309)" data-i18n="stat.alarm251Hint"></span>
     </div>
   </div>
 
@@ -718,8 +717,6 @@ function applyStatus(s) {
       : t('stat.alarmCode', s.alarm);
     const resetBtn = $('btn-alarm-reset');
     resetBtn.style.display = s.canReset ? '' : 'none';
-    const hint = $('st-alarm-hint');
-    hint.style.display = s.alarm === 251 ? '' : 'none';
   }
 
   if (firstStatus) {

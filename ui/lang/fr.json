@@ -94,7 +94,6 @@
   "stat.alarmCode": "⚠ Code alarme : {0}",
   "stat.alarmReset": "Réinitialiser alarme",
   "stat.alarmResetConfirm": "Réinitialiser l'alarme active ?",
-  "stat.alarm251Hint": "L'alarme 251 ne peut pas être réinitialisée via RS485. Effacez-la sur l'écran de la pompe, via myUplink ou en redémarrant le service bridge.",
   "stat.alarmHistory": "Historique des alarmes",
   "stat.alarmStart": "Debut",
   "stat.alarmEnd": "Fin",

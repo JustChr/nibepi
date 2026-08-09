@@ -94,7 +94,6 @@
   "stat.alarmCode": "⚠ Kod alarma: {0}",
   "stat.alarmReset": "Poništi alarm",
   "stat.alarmResetConfirm": "Poništiti aktivni alarm?",
-  "stat.alarm251Hint": "Alarm 251 ne može se poništiti putem RS485. Obrišite ga na zaslonu pumpe, putem myUplink ili ponovnim pokretanjem usluge bridge.",
   "stat.alarmHistory": "Povijest alarma",
   "stat.alarmStart": "Početak",
   "stat.alarmEnd": "Kraj",

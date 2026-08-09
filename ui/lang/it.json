@@ -94,7 +94,6 @@
   "stat.alarmCode": "⚠ Codice allarme: {0}",
   "stat.alarmReset": "Reset allarme",
   "stat.alarmResetConfirm": "Resettare l allarme attivo?",
-  "stat.alarm251Hint": "L'allarme 251 non può essere resettato via RS485. Cancellarlo sul display della pompa, tramite myUplink o riavviando il servizio bridge.",
   "stat.alarmHistory": "Cronologia allarmi",
   "stat.alarmStart": "Inizio",
   "stat.alarmEnd": "Fine",

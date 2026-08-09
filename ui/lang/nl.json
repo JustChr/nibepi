@@ -94,7 +94,6 @@
   "stat.alarmCode": "⚠ Alarmcode: {0}",
   "stat.alarmReset": "Alarm resetten",
   "stat.alarmResetConfirm": "Actief alarm resetten?",
-  "stat.alarm251Hint": "Alarm 251 kan niet via RS485 worden gereset. Wis het op het pompscherm, via myUplink of door de bridge-service te herstarten.",
   "stat.alarmHistory": "Alarmgeschiedenis",
   "stat.alarmStart": "Gestart",
   "stat.alarmEnd": "Beeindigd",

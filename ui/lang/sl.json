@@ -94,7 +94,6 @@
   "stat.alarmCode": "⚠ Koda alarma: {0}",
   "stat.alarmReset": "Ponastavi alarm",
   "stat.alarmResetConfirm": "Ponastaviti aktivni alarm?",
-  "stat.alarm251Hint": "Alarma 251 ni mogoče ponastaviti prek RS485. Počistite ga na zaslonu črpalke, prek myUplink ali z vnovičnim zagonom storitve bridge.",
   "stat.alarmHistory": "Zgodovina alarmov",
   "stat.alarmStart": "Začetek",
   "stat.alarmEnd": "Konec",

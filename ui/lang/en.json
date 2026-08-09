@@ -94,7 +94,6 @@
   "stat.alarmCode": "⚠ Alarm code: {0}",
   "stat.alarmReset": "Reset Alarm",
   "stat.alarmResetConfirm": "Reset the active alarm?",
-  "stat.alarm251Hint": "Alarm 251 cannot be reset via RS485. Clear it on the pump display, via myUplink, or by restarting the bridge service.",
   "stat.alarmHistory": "Alarm History",
   "stat.alarmStart": "Started",
   "stat.alarmEnd": "Ended",

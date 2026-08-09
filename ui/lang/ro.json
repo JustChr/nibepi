@@ -94,7 +94,6 @@
   "stat.alarmCode": "⚠ Cod alarmă: {0}",
   "stat.alarmReset": "Resetare alarmă",
   "stat.alarmResetConfirm": "Resetați alarma activă?",
-  "stat.alarm251Hint": "Alarma 251 nu poate fi resetată prin RS485. Ștergeți-o de pe display-ul pompei, prin myUplink sau repornind serviciul bridge.",
   "stat.alarmHistory": "Istoricul alarmelor",
   "stat.alarmStart": "Inceput",
   "stat.alarmEnd": "Sfarsit",

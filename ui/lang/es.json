@@ -94,7 +94,6 @@
   "stat.alarmCode": "⚠ Código alarma: {0}",
   "stat.alarmReset": "Resetear alarma",
   "stat.alarmResetConfirm": "¿Resetear la alarma activa?",
-  "stat.alarm251Hint": "La alarma 251 no se puede restablecer vía RS485. Bórrela en la pantalla de la bomba, mediante myUplink o reiniciando el servicio bridge.",
   "stat.alarmHistory": "Historial de alarmas",
   "stat.alarmStart": "Inicio",
   "stat.alarmEnd": "Fin",

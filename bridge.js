@@ -369,7 +369,7 @@ function handleFrame(buf, rmuFlag) {
                 } else {
                     const last = [...alarmHistory].reverse().find(e => e.code === prev && !e.end);
                     if (last) last.end = Date.now();
-                    log('info',  `Alarm cleared (was ${prev}, reg ${alarmRegAddr}).`);
+                    log('warn',  `Alarm cleared (was ${prev}, reg ${alarmRegAddr}).`);
                 }
                 broadcast('status', getStatus());
             }
@@ -585,7 +585,7 @@ function getStatus() {
         readonly:             !!(config.system && config.system.readonly),
         version:              VERSION,
         alarm:                alarmValue,
-        canReset:             alarmResetAddr !== null && alarmValue !== 0 && alarmValue !== 251,
+        canReset:             alarmResetAddr !== null && alarmValue !== 0,
         updateAvailable:      !!(_cachedRelease && _cachedRelease.newer),
         latestVersion:        (_cachedRelease && _cachedRelease.newer) ? _cachedRelease.latest : null,
     };
@@ -781,13 +781,17 @@ const server = http.createServer(async (req, res) => {
             if (!alarmResetAddr || !alarmValue) {
                 respond(res, 409, { error: 'No active alarm' }); return;
             }
-            if (alarmValue === 251) {
-                respond(res, 409, { error: 'Alarm 251 cannot be reset remotely — restart the bridge service.' }); return;
-            }
-            const frame = buildWriteFrame(alarmResetAddr, 1);
-            core.send({ type: 'setData', data: frame });
-            log('warn', `Alarm ${alarmValue} reset triggered → reg ${alarmResetAddr} (single write).`);
-            log('info', `Alarm ${alarmValue} reset frame: [${frame.map(b => '0x' + b.toString(16).padStart(2,'0')).join(' ')}]`);
+            // The reset register is edge-triggered: the pump acts on the 0 → 1
+            // transition, so a bare 1 does nothing while it is still latched at 1.
+            // The backend drains its send queue with pop(), so hand over the 1
+            // first and the 0 second to get 0 → 1 on the wire.
+            const frame1 = buildWriteFrame(alarmResetAddr, 1);
+            const frame0 = buildWriteFrame(alarmResetAddr, 0);
+            core.send({ type: 'setData', data: frame1 });
+            core.send({ type: 'setData', data: frame0 });
+            const hex = f => f.map(b => '0x' + b.toString(16).padStart(2,'0')).join(' ');
+            log('warn', `Alarm ${alarmValue} reset triggered → reg ${alarmResetAddr} (0 → 1 edge).`);
+            log('info', `Alarm ${alarmValue} reset frames: 0=[${hex(frame0)}] 1=[${hex(frame1)}]`);
             respond(res, 200, { ok: true });
 
         } else if (pathname === '/api/logs/clear' && req.method === 'POST') {

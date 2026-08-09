@@ -94,7 +94,6 @@
   "stat.alarmCode": "⚠ Κωδικός συναγερμού: {0}",
   "stat.alarmReset": "Επαναφορά συναγερμού",
   "stat.alarmResetConfirm": "Επαναφορά του ενεργού συναγερμού;",
-  "stat.alarm251Hint": "Ο συναγερμός 251 δεν μπορεί να επαναφερθεί μέσω RS485. Διαγράψτε τον από την οθόνη της αντλίας, μέσω myUplink ή επανεκκινώντας την υπηρεσία bridge.",
   "stat.alarmHistory": "Ιστορικό συναγερμών",
   "stat.alarmStart": "Έναρξη",
   "stat.alarmEnd": "Λήξη",

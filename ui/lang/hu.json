@@ -94,7 +94,6 @@
   "stat.alarmCode": "⚠ Riasztáskód: {0}",
   "stat.alarmReset": "Riasztás visszaállítása",
   "stat.alarmResetConfirm": "Visszaállítja az aktív riasztást?",
-  "stat.alarm251Hint": "A 251-es riasztás RS485-ön keresztül nem törölhető. Törölje a szivattyú kijelzőjén, a myUplink alkalmazásban vagy a bridge újraindításával.",
   "stat.alarmHistory": "Riasztas-tortenelem",
   "stat.alarmStart": "Kezdet",
   "stat.alarmEnd": "Veg",

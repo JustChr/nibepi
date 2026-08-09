@@ -94,7 +94,6 @@
   "stat.alarmCode": "⚠ Kód alarmu: {0}",
   "stat.alarmReset": "Resetovat alarm",
   "stat.alarmResetConfirm": "Resetovat aktivní alarm?",
-  "stat.alarm251Hint": "Alarm 251 nelze resetovat přes RS485. Vymažte ho na displeji čerpadla, přes myUplink nebo restartováním služby bridge.",
   "stat.alarmHistory": "Historie alarmů",
   "stat.alarmStart": "Začátek",
   "stat.alarmEnd": "Konec",

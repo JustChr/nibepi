@@ -94,7 +94,6 @@
   "stat.alarmCode": "⚠ Larmkod: {0}",
   "stat.alarmReset": "Återställ larm",
   "stat.alarmResetConfirm": "Återställa det aktiva larmet?",
-  "stat.alarm251Hint": "Larm 251 kan inte återställas via RS485. Rensa det på pumpdisplayen, via myUplink eller genom att starta om bridge-tjänsten.",
   "stat.alarmHistory": "Larmhistorik",
   "stat.alarmStart": "Startade",
   "stat.alarmEnd": "Avslutade",

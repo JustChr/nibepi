@@ -94,7 +94,6 @@
   "stat.alarmCode": "⚠ Hälytyskoodi: {0}",
   "stat.alarmReset": "Nollaa hälytys",
   "stat.alarmResetConfirm": "Nollatako aktiivinen hälytys?",
-  "stat.alarm251Hint": "Hälytystä 251 ei voi nollata RS485:n kautta. Tyhjennä se pumpun näytöltä, myUplinkin kautta tai käynnistämällä bridge-palvelu uudelleen.",
   "stat.alarmHistory": "Hälytyshistoria",
   "stat.alarmStart": "Alkanut",
   "stat.alarmEnd": "Päättynyt",

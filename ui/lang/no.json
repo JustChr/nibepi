@@ -94,7 +94,6 @@
   "stat.alarmCode": "⚠ Alarmkode: {0}",
   "stat.alarmReset": "Tilbakestill alarm",
   "stat.alarmResetConfirm": "Tilbakestille den aktive alarmen?",
-  "stat.alarm251Hint": "Alarm 251 kan ikke tilbakestilles via RS485. Fjern den på pumpe-displayet, via myUplink eller ved å starte bridge-tjenesten på nytt.",
   "stat.alarmHistory": "Alarmhistorikk",
   "stat.alarmStart": "Startet",
   "stat.alarmEnd": "Avsluttet",

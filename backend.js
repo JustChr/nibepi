@@ -40,7 +40,13 @@ const ack = Buffer.from([0x06]);
 const RMU_VERSION_FRAME = Buffer.from([192,238,3,238,3,1,193]);
 const RMU_63_FRAME = Buffer.from([192,96,2,99,0,193]);
 var myPort;
-const sendQueue = [Buffer.from([192,107,6,115,176,1,0,0,0,111])];
+// Alarm reset (reg 45171) is edge-triggered: the pump acts on the 0 → 1
+// transition, so a bare 1 is a no-op while the register is still latched at 1.
+// sendQueue is drained with pop(), so the 1 goes in first and the 0 on top of
+// it — that puts 0 on the wire first, then 1.
+const ALARM_RESET_1 = [192,107,6,115,176,1,0,0,0,111];
+const ALARM_RESET_0 = [192,107,6,115,176,0,0,0,0,110];
+const sendQueue = [Buffer.from(ALARM_RESET_1), Buffer.from(ALARM_RESET_0)];
 const getQueue = [];
 const rmuQueue = [];
 var regQueue = [];
@@ -296,7 +302,8 @@ function analyzeData(data) {
         if(accumLen>=3) {
                 if(startReset===true) {
                     startReset = false;
-                    sendQueue.push(Buffer.from([192,107,6,115,176,1,0,0,0,111]));
+                    sendQueue.push(Buffer.from(ALARM_RESET_1));
+                    sendQueue.push(Buffer.from(ALARM_RESET_0));
                 }
                 // Only decode objects we know
                 if(accumBuf[2]!==0x19 && accumBuf[2]!==0x1A && accumBuf[2]!==0x1B && accumBuf[2]!==0x1C && accumBuf[2]!==0x20) {
