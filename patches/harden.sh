@@ -146,6 +146,21 @@ if systemctl is-active --quiet NetworkManager; then
     fi
 fi
 
+# ── 4c. Keep logind out of /dev/shm ───────────────────────────────────────────
+# systemd-logind defaults to RemoveIPC=yes: when a user's last login session
+# ends it destroys their IPC objects, which includes files in /dev/shm. The
+# backend's PID file lives there and is owned by pi — the same account used to
+# SSH in — so simply logging in and out silently deleted it while the backend
+# kept running. The next bridge restart then could not find its predecessor to
+# hand the serial port over, spawned a second backend, and the pump sat
+# disconnected behind "Serial port busy" until someone killed it by hand.
+sudo mkdir -p /etc/systemd/logind.conf.d
+sudo tee /etc/systemd/logind.conf.d/99-nibepi-keep-ipc.conf > /dev/null << 'EOF'
+[Login]
+RemoveIPC=no
+EOF
+echo 'logind RemoveIPC disabled (protects the backend PID file in /dev/shm).'
+
 # ── 5. Network watchdog ───────────────────────────────────────────────────────
 # Pings the default gateway once a minute and escalates: reassociate → bounce
 # wlan0 → reload brcmfmac → reboot (rate-limited to once per 6 h, because a

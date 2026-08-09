@@ -191,6 +191,7 @@ sudo reboot
 | WiFi power save disabled | `brcmfmac` enables it by default and is prone to dropping the association for good |
 | Network watchdog (every 60 s) | `wlan0` is the Zero W's only link; the hardware watchdog cannot see it die |
 | `resolv.conf` → `/run` symlink | a read-only root blocks NetworkManager from writing it, silently killing all DNS |
+| logind `RemoveIPC=no` | otherwise an SSH login/logout as `pi` deletes the backend PID file and breaks the serial handover |
 | Time sync | `fake-hwclock` can't save on a read-only root, so every boot starts from a stale clock |
 
 bridge.js remounts rw temporarily only when saving config, then returns to ro immediately after.
@@ -233,6 +234,25 @@ so time sync never resolves a pool server and update checks cannot reach GitHub.
 
 `harden.sh` symlinks `/etc/resolv.conf` to NetworkManager's runtime copy under `/run`
 (tmpfs), which it can always write.
+
+### The backend PID file and `RemoveIPC`
+
+`backend.js` keeps the serial port open across `bridge.js` restarts on purpose — it stays
+alive as a "zombie" so the pump keeps getting ACKs and does not raise a MODBUS40 alarm,
+then hands the port over when its successor signals `SIGUSR2`. That handover depends
+entirely on `/dev/shm/nibepi_backend.pid`.
+
+systemd-logind defaults to **`RemoveIPC=yes`**, which destroys a user's IPC objects —
+including files in `/dev/shm` — when their last login session ends. The PID file is owned
+by `pi`, the same account used to SSH in, so **one login and logout silently deleted it**
+while the backend kept running. The next restart could not find its predecessor, spawned
+a second backend, and the pump sat disconnected behind `Serial port busy` until someone
+killed the old process by hand.
+
+`harden.sh` sets `RemoveIPC=no`. Independently, `backend.js` no longer deletes the PID
+file before closing the port (that race left a wedged process with nothing pointing at
+it), and if the port is still busy after 5 retries it escalates to `SIGKILL` — locating
+the predecessor by scanning `/proc` when the PID file is missing entirely.
 
 ### Time sync
 

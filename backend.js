@@ -63,6 +63,10 @@ var portOpenRetries = 0;
 // writable (1777) and not age-swept.
 const PID_FILE = '/dev/shm/nibepi_backend.pid';
 let debugMode = false;
+// PID of the predecessor we asked to hand over, so showError() can escalate to
+// SIGKILL if it never actually releases the port.
+let zombiePid = null;
+let zombieKilled = false;
 
 // The serial hot path churns small Buffers whose backing stores live in native
 // malloc, not the V8 heap. With only ~3 MB of JS heap, V8 sees no pressure and
@@ -75,6 +79,34 @@ if (typeof global.gc === 'function') {
     setInterval(() => {
         if (process.memoryUsage().external > 8 * 1024 * 1024) global.gc();
     }, 60000).unref();
+}
+
+// Last-resort discovery of a predecessor still holding the port when PID_FILE is
+// missing. It goes missing more easily than you would think: systemd-logind
+// defaults to RemoveIPC=yes and wipes every pi-owned file in /dev/shm when the
+// last pi login session ends, so a single SSH login and logout destroys it while
+// the backend keeps running. harden.sh now disables that, but a backend that
+// cannot find its predecessor must still be able to recover on its own.
+function findOtherBackends() {
+    const found = [];
+    try {
+        for (const entry of fs.readdirSync('/proc')) {
+            if (!/^\d+$/.test(entry)) continue;
+            const pid = parseInt(entry);
+            if (pid === process.pid) continue;
+            let argv;
+            try { argv = fs.readFileSync(`/proc/${entry}/cmdline`, 'utf8').split('\0').filter(Boolean); }
+            catch (e) { continue; }
+            // Require an actual node process running backend.js, so a shell whose
+            // command line merely mentions the path is never a target.
+            if (argv.length >= 2 &&
+                /(^|\/)node$/.test(argv[0]) &&
+                argv.some(a => a.endsWith('/backend.js'))) {
+                found.push(pid);
+            }
+        }
+    } catch (e) {}
+    return found;
 }
 
 function openPort() {
@@ -98,7 +130,7 @@ process.on('message', (m) => {
                     if(!fs.existsSync(pf)) continue;
                     const oldPid = parseInt(fs.readFileSync(pf, 'utf8'));
                     if(oldPid && oldPid !== process.pid) {
-                        try { process.kill(oldPid, 'SIGUSR2'); hadZombie = true; } catch(e) {}
+                        try { process.kill(oldPid, 'SIGUSR2'); hadZombie = true; zombiePid = oldPid; } catch(e) {}
                     }
                 } catch(e) {}
             }
@@ -174,12 +206,18 @@ process.on('message', (m) => {
   });
 
   function cleanExit() {
-      try { if(parseInt(fs.readFileSync(PID_FILE,'utf8'))===process.pid) fs.unlinkSync(PID_FILE); } catch(e) {}
+      // Deliberately do NOT unlink PID_FILE here. It used to be removed first,
+      // which raced the successor's write and — when close() below wedged — left a
+      // zombie holding the port with nothing on disk pointing at it. The successor
+      // then had no PID to signal or kill, retried "Serial port busy" 25 times and
+      // gave up, and the pump stayed disconnected until someone killed it by hand.
+      // The successor overwrites PID_FILE with its own pid regardless, and a stale
+      // pid is harmless: process.kill() on a dead pid just throws and is caught.
       if(myPort && myPort.isOpen) {
           // Safety timer: if close() hangs (RS485 HAT mid-frame), force exit so the OS
           // releases the file descriptor and the new backend can claim the port.
+          // Not unref'd — this timer must keep the loop alive long enough to fire.
           const forceExit = setTimeout(() => process.exit(99), 3000);
-          forceExit.unref();
           myPort.close(() => { clearTimeout(forceExit); process.exit(99); });
       } else {
           process.exit(99);
@@ -197,6 +235,23 @@ function showError(error) {
     // Port may be held by a zombie instance — retry a few times to let it release
     if(portOpenRetries < 25) {
         portOpenRetries++;
+        // A predecessor wedged inside serialport.close() never reaches its own exit
+        // timer, so waiting the full 25 rounds cannot help — it only leaves the pump
+        // disconnected for 75 s before giving up entirely. Escalate once to SIGKILL;
+        // the kernel then releases the fd whatever state the process is stuck in.
+        if(portOpenRetries === 5 && !zombieKilled) {
+            zombieKilled = true;
+            // Prefer the pid we were handed; fall back to scanning /proc, because a
+            // wedged predecessor is exactly the case where PID_FILE may be gone.
+            const targets = zombiePid ? [zombiePid] : findOtherBackends();
+            for (const pid of targets) {
+                try {
+                    process.kill(pid, 'SIGKILL');
+                    console.log(`Backend ${pid} did not release the serial port; sent SIGKILL.`);
+                } catch(e) {}
+            }
+            if (!targets.length) console.log('Serial port busy but no other backend found.');
+        }
         console.log(`Serial port busy, retry ${portOpenRetries}/25 in 3s...`);
         myPort.removeAllListeners();
         setTimeout(openPort, 3000);
