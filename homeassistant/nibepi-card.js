@@ -25,7 +25,7 @@
  *     node homeassistant/gen-alarms.js
  */
 
-const CARD_VERSION = '3.2.1';
+const CARD_VERSION = '3.2.2';
 
 // Card content width, in px, at which the landscape sheet takes over. The
 // landscape drawing is 1040 units wide, so below this it renders at under ~0.87×
@@ -653,7 +653,11 @@ class NibepiFlowCard extends HTMLElement {
            anywhere. Landscape is switched on by the .wide class. */
         .sheet { margin:0 0 18px; }
         svg.schematic { display:block; height:auto; }
-        svg.v-wide { display:none; width:100%; max-width:1400px; margin:0 auto; }
+        /* No max-width on landscape: its ink fills its 1040-unit viewBox edge to
+           edge, so any cap shows up directly as unused card. Portrait is capped
+           because a 340-unit sheet stretched across a desktop card would be all
+           whitespace and 40 px type. */
+        svg.v-wide { display:none; width:100%; }
         svg.v-tall { display:block; width:100%; max-width:480px; margin:0 auto; }
         ha-card.wide svg.v-wide { display:block; }
         ha-card.wide svg.v-tall { display:none; }
