@@ -185,7 +185,7 @@ sudo reboot
 | Root filesystem `ro` in fstab | Boots read-only every time — the single biggest protection for the SD card |
 | `/tmp` and `/var/log` → tmpfs (RAM) | Eliminates the most common sources of runtime SD writes |
 | Hardware watchdog enabled (`dtparam=watchdog=on`) | Pi reboots automatically if the kernel hangs or freezes |
-| systemd watchdog timers (15 s / 2 min) | systemd kicks the watchdog; if it stops, the hardware watchdog fires |
+| systemd watchdog timers (1 min / 2 min), set via a `system.conf.d` drop-in | systemd kicks the watchdog; if it stops, the hardware watchdog fires |
 | Bluetooth disabled (`dtoverlay=disable-bt`) | Unused on this device; frees a CPU core and reduces background activity |
 | Bridge service restart limits | After 5 crashes within 2 minutes, triggers a full reboot instead of looping |
 | WiFi power save disabled | `brcmfmac` enables it by default and is prone to dropping the association for good |

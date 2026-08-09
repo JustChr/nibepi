@@ -75,9 +75,23 @@ else
     echo 'Watchdog already enabled, skipping.'
 fi
 
-sudo sed -i 's/^#*RuntimeWatchdogSec=.*/RuntimeWatchdogSec=15/'   /etc/systemd/system.conf
-sudo sed -i 's/^#*ShutdownWatchdogSec=.*/ShutdownWatchdogSec=2min/' /etc/systemd/system.conf
-echo 'Systemd watchdog timers set.'
+# Use a drop-in, not sed on /etc/systemd/system.conf. Two reasons that file is
+# the wrong target: *.conf.d drop-ins override it (Raspberry Pi OS ships
+# /usr/lib/systemd/system.conf.d/40-rpi-enable-watchdog.conf, so the edit had no
+# effect at all on Trixie), and ShutdownWatchdogSec was renamed RebootWatchdogSec
+# in modern systemd, so that line matched nothing either. 99- sorts last, so this
+# wins over any vendor drop-in.
+sudo mkdir -p /etc/systemd/system.conf.d
+sudo tee /etc/systemd/system.conf.d/99-nibepi-watchdog.conf > /dev/null << 'EOF'
+[Manager]
+# 1 min rather than a tighter value: on a single-core Zero W systemd's main loop
+# can be starved for many seconds under heavy I/O (apt, npm build), and a
+# spurious reboot mid-transaction is far more damaging than 45 s of slower
+# recovery from a genuine hang. Matches what Raspberry Pi ship for this board.
+RuntimeWatchdogSec=1min
+RebootWatchdogSec=2min
+EOF
+echo 'Systemd watchdog timers set (drop-in).'
 
 # ── 3. Disable Bluetooth ──────────────────────────────────────────────────────
 if ! grep -q 'dtoverlay=disable-bt' "$BOOT_DIR/config.txt"; then
