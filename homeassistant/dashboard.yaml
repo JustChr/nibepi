@@ -69,6 +69,8 @@ views:
           # Set `details: false` to drop the grouped rows and keep only the
           # diagram, summary and heat demand meter.
           - type: custom:nibepi-flow-card
+            grid_options:
+              columns: 36
             language: de
             title: Wärmepumpe F1155
             details: true
@@ -286,11 +288,15 @@ views:
         column_span: 2
         cards:
           - type: heading
+            grid_options:
+              columns: 24
             heading: Temperaturen 24 Stunden
             heading_style: title
             icon: mdi:chart-line
 
           - type: custom:apexcharts-card
+            grid_options:
+              columns: 24
             graph_span: 24h
             span:
               end: minute
@@ -413,11 +419,15 @@ views:
         column_span: 2
         cards:
           - type: heading
+            grid_options:
+              columns: 24
             heading: Temperaturen 7 Tage
             heading_style: title
             icon: mdi:thermometer-lines
 
           - type: custom:apexcharts-card
+            grid_options:
+              columns: 24
             graph_span: 7d
             span:
               end: minute
@@ -599,6 +609,8 @@ views:
         column_span: 2
         cards:
           - type: heading
+            grid_options:
+              columns: 24
             heading: Energie 30 Tage
             heading_style: title
             icon: mdi:chart-bar
@@ -608,6 +620,8 @@ views:
           # so this needs no HACS card and no recorder retention beyond the
           # default — statistics survive the recorder purge, raw history does not.
           - type: statistics-graph
+            grid_options:
+              columns: 24
             title: Tageswerte
             chart_type: bar
             period: day
@@ -649,11 +663,15 @@ views:
         column_span: 2
         cards:
           - type: heading
+            grid_options:
+              columns: 24
             heading: Speicherverlauf 48 Stunden
             heading_style: title
             icon: mdi:chart-line
 
           - type: custom:apexcharts-card
+            grid_options:
+              columns: 24
             graph_span: 48h
             span:
               end: minute
@@ -871,6 +889,8 @@ views:
         column_span: 3
         cards:
           - type: conditional
+            grid_options:
+              columns: 36
             conditions:
               - condition: state
                 entity: binary_sensor.nibe_alarm_active

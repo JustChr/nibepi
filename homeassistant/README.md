@@ -100,10 +100,33 @@ layout: auto     # auto (default) | wide | tall — pin a geometry, ignore the m
 wide_at: 900     # px of card content width at which auto switches to landscape
 ```
 
-If the card stays portrait on a desktop, the card is narrower than `wide_at`, not
-broken — a sections-view column caps out well below the full window. Either give
-it more room (raise the view's `max_columns` and the section's `column_span`, or
-put it in a panel view) or set `layout: wide` and accept the smaller type.
+#### If it stays portrait on a desktop: `grid_options`
+
+`column_span` widens the **section**, not the cards in it. A section's grid is
+`12 × column_span` columns, and a card with no `grid_options` takes 12 of them —
+so in the `column_span: 3` section the schematic sits in, an unsized card gets
+**one third** of the width. About 500 px on a normal window, comfortably under
+`wide_at`, and portrait every time.
+
+Every card in a spanning section needs to be told to fill it:
+
+```yaml
+- type: grid
+  column_span: 3
+  cards:
+    - type: custom:nibepi-flow-card
+      grid_options:
+        columns: 36        # 12 × column_span
+```
+
+`dashboard.yaml` sets this on all ten cards that live in spanning sections — 36
+in the `column_span: 3` sections, 24 in the `column_span: 2` ones. Miss it and
+the charts render at half width too; it is just less obvious on a chart than on
+a drawing that changes shape.
+
+`layout: wide` forces landscape regardless of width, but in a section that is
+sized wrong it only buys you a shrunken drawing in a third of a card. Fix the
+`grid_options` first and leave `layout` on `auto`.
 
 Earlier versions used a CSS container query at 1040 px. A container query needs an
 intact `container-type` on whatever host is rendering the card, and when it fails
