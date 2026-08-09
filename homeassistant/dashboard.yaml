@@ -1,0 +1,1019 @@
+# ─────────────────────────────────────────────────────────────────────────────
+#  NibePi — Home Assistant dashboard
+#
+#  Paste into a new dashboard: Settings → Dashboards → Add dashboard → open it →
+#  pencil → ⋮ → "Raw configuration editor" → replace everything with this file.
+#
+#  Requires
+#    · Home Assistant 2024.11 or newer   (sections views, tile features, badges)
+#    · HACS: apexcharts-card              (github.com/RomRider/apexcharts-card)
+#    · homeassistant/nibepi-card.js       registered as a dashboard resource
+#    · homeassistant/packages/nibepi.yaml installed (COP, heat output, alarm text)
+#
+#  Labels are German, matching NibePi's own UI language on this install. For
+#  English: set `language: en` on the flow card below and translate the `name:`
+#  and `heading:` keys — no entity ids change.
+#
+#  Registers that must be enabled in the NibePi UI for every card here to fill in
+#  are listed in homeassistant/README.md.
+# ─────────────────────────────────────────────────────────────────────────────
+
+views:
+  # ═══════════════════════════════════════════════════════════════════════════
+  #  1 · Übersicht — the one screen that answers "what is the pump doing?"
+  # ═══════════════════════════════════════════════════════════════════════════
+  - title: Übersicht
+    path: uebersicht
+    icon: mdi:heat-pump
+    type: sections
+    max_columns: 3
+    dense_section_placement: true
+
+    badges:
+      - type: entity
+        entity: binary_sensor.nibe_alarm_active
+        name: Alarm
+        color: red
+        state_content: state
+        visibility:
+          - condition: state
+            entity: binary_sensor.nibe_alarm_active
+            state: "on"
+      - type: entity
+        entity: sensor.nibe_heat_pump_nibe_bt1_outdoor_temperature
+        name: Außen
+        color: cyan
+      - type: entity
+        entity: sensor.nibe_heat_pump_nibe_bt50_room_temp_s1
+        name: Raum
+        color: green
+      - type: entity
+        entity: sensor.nibe_heat_pump_nibe_bt6_hw_load
+        name: Warmwasser
+        color: orange
+      - type: entity
+        entity: sensor.nibe_heat_pump_nibe_prio
+        name: Betrieb
+      - type: entity
+        entity: sensor.nibe_cop
+        name: COP
+        color: purple
+
+    sections:
+      # ── the schematic, full width ──────────────────────────────────────────
+      - type: grid
+        column_span: 3
+        cards:
+          # Every entity key is optional — anything omitted, or whose register is
+          # not enabled, is simply left out of the drawing and its row hides.
+          # Set `details: false` to drop the grouped rows and keep only the
+          # diagram, summary and heat demand meter.
+          - type: custom:nibepi-flow-card
+            language: de
+            title: Wärmepumpe F1155
+            details: true
+            # auto | wide | tall. `auto` measures the card and switches to the
+            # landscape sheet at `wide_at` px of content width; set `wide` to pin
+            # it regardless, e.g. if the dashboard column is narrower than that.
+            layout: auto
+            wide_at: 900
+            entities:
+              # outdoor
+              outdoor: sensor.nibe_heat_pump_nibe_bt1_outdoor_temperature
+              outdoor_avg: sensor.nibe_heat_pump_nibe_bt1_average
+              # heating circuit
+              supply: sensor.nibe_heat_pump_nibe_bt2_supply_temp_s1
+              return: sensor.nibe_heat_pump_nibe_eb100_ep14_bt3_return_temp
+              supply_calc: sensor.nibe_heat_pump_nibe_calc_supply_s1
+              dt_actual: sensor.nibe_heat_pump_nibe_heat_medium_flow_dt_actual
+              dt_set: sensor.nibe_heat_pump_nibe_heat_medium_flow_dt_set_point
+              flow: sensor.nibe_heat_pump_nibe_bf1_ep14_flow
+              supply_pump: sensor.nibe_heat_pump_nibe_supply_pump_speed_ep14
+              room: sensor.nibe_heat_pump_nibe_bt50_room_temp_s1
+              room_set: number.nibe_heat_pump_nibe_room_sensor_setpoint_s1
+              curve: number.nibe_heat_pump_nibe_heat_curve_s1
+              curve_offset: number.nibe_heat_pump_nibe_heat_offset_s1
+              use_room_sensor: switch.nibe_heat_pump_nibe_use_room_sensor_s1
+              # hot water — this installation has no BT7, so the BT7 pill is
+              # left unconfigured and the card drops it from the drawing
+              hw_load: sensor.nibe_heat_pump_nibe_bt6_hw_load
+              hw_mode: select.nibe_heat_pump_nibe_hot_water_comfort_mode
+              hw_temporary: select.nibe_heat_pump_nibe_temporary_lux
+              runtime_compressor_hw: sensor.nibe_heat_pump_nibe_tot_hw_op_time_compr_eb100_ep14
+              # ground loop
+              brine_in: sensor.nibe_heat_pump_nibe_eb100_ep14_bt10_brine_in_temp
+              brine_out: sensor.nibe_heat_pump_nibe_eb100_ep14_bt11_brine_out_temp
+              brine_pump: sensor.nibe_heat_pump_nibe_ep14_gp2_brine_pump_status_ep14
+              # compressor
+              compressor_hz: sensor.nibe_heat_pump_nibe_compressor_frequency_actual
+              compressor_request: sensor.nibe_heat_pump_nibe_compressor_frequency_request
+              compressor_state: sensor.nibe_heat_pump_nibe_compressor_state_ep14
+              compressor_starts: sensor.nibe_heat_pump_nibe_compressor_starts_eb100_ep14
+              runtime_compressor: sensor.nibe_heat_pump_nibe_tot_op_time_compr_eb100_ep14
+              # immersion heater
+              add_power: sensor.nibe_heat_pump_nibe_int_el_add_power
+              add_state: sensor.nibe_heat_pump_nibe_int_el_add_state
+              runtime_add: sensor.nibe_heat_pump_nibe_tot_op_time_add
+              # electrical — BE1–BE3 read 0 A unless the load monitor's current
+              # transformers are clamped on the incoming phases, so they are left
+              # out rather than shown as three permanent zeroes
+              power_in: sensor.nibe_heat_pump_nibe_compr_in_power
+              # heat demand — dm_start is the threshold marker on the meter
+              degree_minutes: number.nibe_heat_pump_nibe_degree_minutes_16_bit
+              dm_start: number.nibe_heat_pump_nibe_dm_start_heating
+              # derived
+              heat_output: sensor.nibe_heat_output
+              cop: sensor.nibe_cop
+              cop_today: sensor.nibe_cop_today
+              cop_month: sensor.nibe_cop_month
+              energy_heating_today: sensor.nibe_heating_energy_daily
+              energy_hw_today: sensor.nibe_hot_water_energy_daily
+              energy_electric_today: sensor.nibe_electric_energy_daily
+              # signals
+              prio: sensor.nibe_heat_pump_nibe_prio
+              smart_home_mode: sensor.nibe_heat_pump_nibe_smart_home_mode
+              sg_ready: sensor.nibe_heat_pump_nibe_state_sg_ready
+              holiday: select.nibe_heat_pump_nibe_holiday_activated
+              alarm: sensor.nibe_heat_pump_nibe_alarm
+
+      # ── heating control ───────────────────────────────────────────────────
+      - type: grid
+        cards:
+          - type: heading
+            heading: Heizung
+            heading_style: title
+            icon: mdi:radiator
+
+          - type: tile
+            entity: number.nibe_heat_pump_nibe_room_sensor_setpoint_s1
+            name: Raumtemperatur Soll
+            icon: mdi:home-thermometer
+            features_position: bottom
+            features:
+              - type: numeric-input
+                style: slider
+
+          - type: tile
+            entity: number.nibe_heat_pump_nibe_heat_offset_s1
+            name: Heizkurve Offset
+            icon: mdi:tune-variant
+            features_position: bottom
+            features:
+              - type: numeric-input
+                style: slider
+
+          - type: tile
+            entity: number.nibe_heat_pump_nibe_heat_curve_s1
+            name: Heizkurve
+            icon: mdi:chart-bell-curve-cumulative
+            features_position: bottom
+            features:
+              - type: numeric-input
+                style: box
+
+          - type: tile
+            entity: sensor.nibe_heat_pump_nibe_calc_supply_s1
+            name: Vorlauf Soll
+            icon: mdi:target
+
+          - type: tile
+            entity: switch.nibe_heat_pump_nibe_use_room_sensor_s1
+            name: Raumfühler aktiv
+            icon: mdi:thermostat-box
+
+          - type: tile
+            entity: select.nibe_heat_pump_nibe_holiday_activated
+            name: Urlaubsmodus
+            icon: mdi:bag-suitcase
+            features_position: bottom
+            features:
+              - type: select-options
+
+      # ── hot water control ─────────────────────────────────────────────────
+      - type: grid
+        cards:
+          - type: heading
+            heading: Warmwasser
+            heading_style: title
+            icon: mdi:water-boiler
+
+          - type: tile
+            entity: sensor.nibe_heat_pump_nibe_bt6_hw_load
+            name: Ladetemperatur
+            icon: mdi:thermometer-water
+            color: orange
+
+          - type: tile
+            entity: script.nibe_hot_water_boost
+            name: Einmalige Erwärmung
+            icon: mdi:water-plus
+            hide_state: true
+            tap_action:
+              action: perform-action
+              perform_action: script.nibe_hot_water_boost
+
+          - type: tile
+            entity: select.nibe_heat_pump_nibe_temporary_lux
+            name: Temporärer Luxus
+            icon: mdi:water-thermometer
+            features_position: bottom
+            features:
+              - type: select-options
+
+          - type: tile
+            entity: select.nibe_heat_pump_nibe_hot_water_comfort_mode
+            name: Komfortmodus
+            icon: mdi:water-percent
+            features_position: bottom
+            features:
+              - type: select-options
+
+      # ── right column: state at a glance ───────────────────────────────────
+      - type: grid
+        cards:
+          - type: heading
+            heading: Zustand
+            heading_style: title
+            icon: mdi:pulse
+
+          - type: gauge
+            entity: number.nibe_heat_pump_nibe_degree_minutes_16_bit
+            name: Gradminuten
+            min: -800
+            max: 100
+            needle: true
+            segments:
+              - from: -800
+                color: "#d24c3c"
+              - from: -400
+                color: "#e07b39"
+              - from: -150
+                color: "#4fbf8b"
+              - from: 0
+                color: "#4fb0e0"
+
+          - type: tile
+            entity: sensor.nibe_heat_pump_nibe_compressor_frequency_actual
+            name: Verdichter
+            icon: mdi:engine
+            color: purple
+
+          - type: tile
+            entity: sensor.nibe_compressor_state
+            name: Verdichterstatus
+            icon: mdi:state-machine
+
+          - type: tile
+            entity: sensor.nibe_heat_output
+            name: Wärmeleistung
+            icon: mdi:fire
+            color: orange
+
+          - type: tile
+            entity: sensor.nibe_electrical_input
+            name: Stromaufnahme
+            icon: mdi:flash
+            color: yellow
+
+          - type: tile
+            entity: binary_sensor.nibe_immersion_heater_active
+            name: Zusatzheizung
+            icon: mdi:heating-coil
+            color: red
+
+      # ── 24 h temperature history ──────────────────────────────────────────
+      - type: grid
+        column_span: 2
+        cards:
+          - type: heading
+            heading: Temperaturen 24 Stunden
+            heading_style: title
+            icon: mdi:chart-line
+
+          - type: custom:apexcharts-card
+            graph_span: 24h
+            span:
+              end: minute
+            header:
+              show: true
+              show_states: true
+              colorize_states: true
+            apex_config:
+              chart:
+                height: 300
+              legend:
+                position: bottom
+              grid:
+                borderColor: "#40404040"
+            yaxis:
+              - id: temp
+                decimals: 1
+                apex_config:
+                  tickAmount: 6
+                  title:
+                    text: "°C"
+            series:
+              - entity: sensor.nibe_heat_pump_nibe_bt1_outdoor_temperature
+                name: Außen
+                yaxis_id: temp
+                type: area
+                color: "#4fb0e0"
+                opacity: 0.15
+                stroke_width: 2
+                curve: smooth
+                group_by:
+                  func: avg
+                  duration: 10min
+              - entity: sensor.nibe_heat_pump_nibe_bt50_room_temp_s1
+                name: Raum
+                yaxis_id: temp
+                color: "#4fbf8b"
+                stroke_width: 2.5
+                curve: smooth
+                group_by:
+                  func: avg
+                  duration: 10min
+              - entity: sensor.nibe_heat_pump_nibe_bt2_supply_temp_s1
+                name: Vorlauf
+                yaxis_id: temp
+                color: "#e07b39"
+                stroke_width: 2
+                curve: smooth
+                group_by:
+                  func: avg
+                  duration: 10min
+              - entity: sensor.nibe_heat_pump_nibe_eb100_ep14_bt3_return_temp
+                name: Rücklauf
+                yaxis_id: temp
+                color: "#c9a227"
+                stroke_width: 1.5
+                curve: smooth
+                group_by:
+                  func: avg
+                  duration: 10min
+              - entity: sensor.nibe_heat_pump_nibe_calc_supply_s1
+                name: Vorlauf Soll
+                yaxis_id: temp
+                color: "#8a8a8a"
+                stroke_width: 1.5
+                curve: stepline
+                group_by:
+                  func: avg
+                  duration: 10min
+
+      # ── energy today ──────────────────────────────────────────────────────
+      - type: grid
+        cards:
+          - type: heading
+            heading: Energie heute
+            heading_style: title
+            icon: mdi:lightning-bolt
+
+          - type: tile
+            entity: sensor.nibe_heating_energy_daily
+            name: Heizung erzeugt
+            icon: mdi:radiator
+            color: orange
+
+          - type: tile
+            entity: sensor.nibe_hot_water_energy_daily
+            name: Warmwasser erzeugt
+            icon: mdi:water-boiler
+            color: cyan
+
+          - type: tile
+            entity: sensor.nibe_electric_energy_daily
+            name: Strom verbraucht
+            icon: mdi:flash
+            color: yellow
+
+          - type: tile
+            entity: sensor.nibe_cop_today
+            name: COP heute
+            icon: mdi:chart-line
+            color: purple
+
+          - type: tile
+            entity: sensor.nibe_cop_month
+            name: COP Monat
+            icon: mdi:calendar-month
+            color: purple
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  #  2 · Verlauf — the long view
+  # ═══════════════════════════════════════════════════════════════════════════
+  - title: Verlauf
+    path: verlauf
+    icon: mdi:chart-areaspline
+    type: sections
+    max_columns: 2
+
+    sections:
+      - type: grid
+        column_span: 2
+        cards:
+          - type: heading
+            heading: Temperaturen 7 Tage
+            heading_style: title
+            icon: mdi:thermometer-lines
+
+          - type: custom:apexcharts-card
+            graph_span: 7d
+            span:
+              end: minute
+            header:
+              show: true
+              show_states: true
+              colorize_states: true
+            apex_config:
+              chart:
+                height: 320
+              legend:
+                position: bottom
+            yaxis:
+              - id: temp
+                decimals: 1
+            series:
+              - entity: sensor.nibe_heat_pump_nibe_bt1_outdoor_temperature
+                name: Außen
+                yaxis_id: temp
+                type: area
+                color: "#4fb0e0"
+                opacity: 0.15
+                stroke_width: 2
+                curve: smooth
+                group_by:
+                  func: avg
+                  duration: 1h
+              - entity: sensor.nibe_heat_pump_nibe_bt50_room_temp_s1
+                name: Raum
+                yaxis_id: temp
+                color: "#4fbf8b"
+                stroke_width: 2.5
+                curve: smooth
+                group_by:
+                  func: avg
+                  duration: 1h
+              - entity: sensor.nibe_heat_pump_nibe_bt2_supply_temp_s1
+                name: Vorlauf
+                yaxis_id: temp
+                color: "#e07b39"
+                stroke_width: 2
+                curve: smooth
+                group_by:
+                  func: avg
+                  duration: 1h
+              - entity: sensor.nibe_heat_pump_nibe_bt6_hw_load
+                name: Warmwasser
+                yaxis_id: temp
+                color: "#d24c3c"
+                stroke_width: 2
+                curve: smooth
+                group_by:
+                  func: avg
+                  duration: 1h
+
+      - type: grid
+        cards:
+          - type: heading
+            heading: Gradminuten & Verdichter
+            heading_style: title
+            icon: mdi:speedometer
+
+          - type: custom:apexcharts-card
+            graph_span: 48h
+            span:
+              end: minute
+            header:
+              show: true
+              show_states: true
+              colorize_states: true
+            apex_config:
+              chart:
+                height: 280
+              legend:
+                position: bottom
+            yaxis:
+              - id: dm
+                decimals: 0
+                apex_config:
+                  title:
+                    text: DM
+              - id: hz
+                opposite: true
+                min: 0
+                decimals: 0
+                apex_config:
+                  title:
+                    text: Hz
+            series:
+              - entity: number.nibe_heat_pump_nibe_degree_minutes_16_bit
+                name: Gradminuten
+                yaxis_id: dm
+                type: area
+                color: "#7e57c2"
+                opacity: 0.2
+                stroke_width: 2
+                curve: smooth
+                group_by:
+                  func: avg
+                  duration: 10min
+              - entity: sensor.nibe_heat_pump_nibe_compressor_frequency_actual
+                name: Verdichter
+                yaxis_id: hz
+                type: area
+                color: "#e07b39"
+                opacity: 0.25
+                stroke_width: 1.5
+                curve: stepline
+                group_by:
+                  func: max
+                  duration: 10min
+
+      - type: grid
+        cards:
+          - type: heading
+            heading: Sole & Wirkungsgrad
+            heading_style: title
+            icon: mdi:snowflake-thermometer
+
+          - type: custom:apexcharts-card
+            graph_span: 48h
+            span:
+              end: minute
+            header:
+              show: true
+              show_states: true
+              colorize_states: true
+            apex_config:
+              chart:
+                height: 280
+              legend:
+                position: bottom
+            yaxis:
+              - id: temp
+                decimals: 1
+                apex_config:
+                  title:
+                    text: "°C"
+              - id: cop
+                opposite: true
+                min: 0
+                max: 7
+                decimals: 1
+                apex_config:
+                  title:
+                    text: COP
+            series:
+              - entity: sensor.nibe_heat_pump_nibe_eb100_ep14_bt10_brine_in_temp
+                name: Sole ein
+                yaxis_id: temp
+                color: "#2f80c9"
+                stroke_width: 2
+                curve: smooth
+                group_by:
+                  func: avg
+                  duration: 10min
+              - entity: sensor.nibe_heat_pump_nibe_eb100_ep14_bt11_brine_out_temp
+                name: Sole aus
+                yaxis_id: temp
+                color: "#1f4e79"
+                stroke_width: 2
+                curve: smooth
+                group_by:
+                  func: avg
+                  duration: 10min
+              - entity: sensor.nibe_cop
+                name: COP
+                yaxis_id: cop
+                type: area
+                color: "#4fbf8b"
+                opacity: 0.2
+                stroke_width: 2
+                curve: smooth
+                group_by:
+                  func: avg
+                  duration: 30min
+
+      - type: grid
+        column_span: 2
+        cards:
+          - type: heading
+            heading: Energie 30 Tage
+            heading_style: title
+            icon: mdi:chart-bar
+
+          # Core statistics-graph rather than apexcharts: daily `change` on a
+          # total_increasing sensor is exactly what long-term statistics store,
+          # so this needs no HACS card and no recorder retention beyond the
+          # default — statistics survive the recorder purge, raw history does not.
+          - type: statistics-graph
+            title: Tageswerte
+            chart_type: bar
+            period: day
+            days_to_show: 30
+            stat_types:
+              - change
+            entities:
+              - entity: sensor.nibe_energy_heating_produced
+                name: Heizung erzeugt
+              - entity: sensor.nibe_energy_hot_water_produced
+                name: Warmwasser erzeugt
+              - entity: sensor.nibe_electric_energy
+                name: Strom verbraucht
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  #  3 · Warmwasser — everything about the tank
+  # ═══════════════════════════════════════════════════════════════════════════
+  - title: Warmwasser
+    path: warmwasser
+    icon: mdi:water-boiler
+    type: sections
+    max_columns: 3
+
+    badges:
+      - type: entity
+        entity: sensor.nibe_heat_pump_nibe_bt6_hw_load
+        name: Ladung
+        color: orange
+      - type: entity
+        entity: select.nibe_heat_pump_nibe_temporary_lux
+        name: Temporär
+      - type: entity
+        entity: sensor.nibe_hot_water_energy_daily
+        name: Heute
+        color: cyan
+
+    sections:
+      - type: grid
+        column_span: 2
+        cards:
+          - type: heading
+            heading: Speicherverlauf 48 Stunden
+            heading_style: title
+            icon: mdi:chart-line
+
+          - type: custom:apexcharts-card
+            graph_span: 48h
+            span:
+              end: minute
+            header:
+              show: true
+              show_states: true
+              colorize_states: true
+            apex_config:
+              chart:
+                height: 300
+              legend:
+                position: bottom
+            yaxis:
+              - id: temp
+                decimals: 1
+                apex_config:
+                  title:
+                    text: "°C"
+              - id: hz
+                opposite: true
+                min: 0
+                decimals: 0
+            series:
+              - entity: sensor.nibe_heat_pump_nibe_bt6_hw_load
+                name: Ladetemperatur
+                yaxis_id: temp
+                type: area
+                color: "#d24c3c"
+                opacity: 0.15
+                stroke_width: 2.5
+                curve: smooth
+                group_by:
+                  func: avg
+                  duration: 10min
+              - entity: number.nibe_heat_pump_nibe_start_temperature_hw_normal
+                name: Startschwelle
+                yaxis_id: temp
+                color: "#8a8a8a"
+                stroke_width: 1.5
+                curve: stepline
+                group_by:
+                  func: avg
+                  duration: 10min
+              - entity: sensor.nibe_heat_pump_nibe_compressor_frequency_actual
+                name: Verdichter
+                yaxis_id: hz
+                type: area
+                color: "#7e57c2"
+                opacity: 0.2
+                stroke_width: 1
+                curve: stepline
+                group_by:
+                  func: max
+                  duration: 10min
+
+      - type: grid
+        cards:
+          - type: heading
+            heading: Sofort
+            heading_style: title
+            icon: mdi:flash
+
+          - type: tile
+            entity: script.nibe_hot_water_boost
+            name: Einmalige Erwärmung
+            icon: mdi:water-plus
+            hide_state: true
+            tap_action:
+              action: perform-action
+              perform_action: script.nibe_hot_water_boost
+
+          - type: tile
+            entity: script.nibe_hot_water_3h
+            name: 3 Stunden extra
+            icon: mdi:clock-fast
+            hide_state: true
+            tap_action:
+              action: perform-action
+              perform_action: script.nibe_hot_water_3h
+
+          - type: tile
+            entity: script.nibe_hot_water_cancel
+            name: Abbrechen
+            icon: mdi:water-off
+            hide_state: true
+            tap_action:
+              action: perform-action
+              perform_action: script.nibe_hot_water_cancel
+
+          - type: tile
+            entity: select.nibe_heat_pump_nibe_hot_water_comfort_mode
+            name: Komfortmodus
+            icon: mdi:water-percent
+            features_position: bottom
+            features:
+              - type: select-options
+
+      - type: grid
+        cards:
+          - type: heading
+            heading: Start- und Stopptemperaturen
+            heading_style: title
+            icon: mdi:thermometer-lines
+
+          - type: heading
+            heading: Economy
+            heading_style: subtitle
+          - type: tile
+            entity: number.nibe_heat_pump_nibe_start_temperature_hw_economy
+            name: Start
+            features_position: bottom
+            features:
+              - type: numeric-input
+                style: box
+          - type: tile
+            entity: number.nibe_heat_pump_nibe_stop_temperature_hw_economy
+            name: Stopp
+            features_position: bottom
+            features:
+              - type: numeric-input
+                style: box
+
+          - type: heading
+            heading: Normal
+            heading_style: subtitle
+          - type: tile
+            entity: number.nibe_heat_pump_nibe_start_temperature_hw_normal
+            name: Start
+            features_position: bottom
+            features:
+              - type: numeric-input
+                style: box
+          - type: tile
+            entity: number.nibe_heat_pump_nibe_stop_temperature_hw_normal
+            name: Stopp
+            features_position: bottom
+            features:
+              - type: numeric-input
+                style: box
+
+          - type: heading
+            heading: Luxus
+            heading_style: subtitle
+          - type: tile
+            entity: number.nibe_heat_pump_nibe_start_temperature_hw_luxury
+            name: Start
+            features_position: bottom
+            features:
+              - type: numeric-input
+                style: box
+          - type: tile
+            entity: number.nibe_heat_pump_nibe_stop_temperature_hw_luxury
+            name: Stopp
+            features_position: bottom
+            features:
+              - type: numeric-input
+                style: box
+
+      - type: grid
+        cards:
+          - type: heading
+            heading: Periodische Erwärmung
+            heading_style: title
+            icon: mdi:calendar-sync
+
+          - type: tile
+            entity: number.nibe_heat_pump_nibe_periodic_hw
+            name: Aktiv (1 = ein)
+            features_position: bottom
+            features:
+              - type: numeric-input
+                style: box
+          - type: tile
+            entity: number.nibe_heat_pump_nibe_periodic_hw_interval
+            name: Intervall
+            features_position: bottom
+            features:
+              - type: numeric-input
+                style: box
+          - type: tile
+            entity: number.nibe_heat_pump_nibe_stop_temperature_periodic_hw
+            name: Stopptemperatur
+            features_position: bottom
+            features:
+              - type: numeric-input
+                style: box
+
+          - type: heading
+            heading: Bilanz
+            heading_style: subtitle
+          - type: tile
+            entity: sensor.nibe_hot_water_energy_daily
+            name: Erzeugt heute
+            icon: mdi:water-boiler
+          - type: tile
+            entity: sensor.nibe_hot_water_energy_monthly
+            name: Erzeugt Monat
+            icon: mdi:calendar-month
+          - type: tile
+            entity: sensor.nibe_heat_pump_nibe_tot_hw_op_time_compr_eb100_ep14
+            name: Verdichterlaufzeit WW
+            icon: mdi:timer-outline
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  #  4 · Diagnose — the numbers you only want when something is off
+  # ═══════════════════════════════════════════════════════════════════════════
+  - title: Diagnose
+    path: diagnose
+    icon: mdi:stethoscope
+    type: sections
+    max_columns: 3
+
+    sections:
+      - type: grid
+        column_span: 3
+        cards:
+          - type: conditional
+            conditions:
+              - condition: state
+                entity: binary_sensor.nibe_alarm_active
+                state: "on"
+            card:
+              type: markdown
+              text: >-
+                ## ⚠ Alarm {{ states('sensor.nibe_heat_pump_nibe_alarm') }} —
+                {{ states('sensor.nibe_alarm_text') }}
+
+                Außen {{ states('sensor.nibe_heat_pump_nibe_bt1_outdoor_temperature') }} °C ·
+                Vorlauf {{ states('sensor.nibe_heat_pump_nibe_bt2_supply_temp_s1') }} °C ·
+                Sole ein {{ states('sensor.nibe_heat_pump_nibe_eb100_ep14_bt10_brine_in_temp') }} °C
+
+                Zurücksetzen löst einen 0 → 1 Flankenwechsel auf Register 45171
+                über NibePis HTTP-Endpunkt aus.
+
+      - type: grid
+        cards:
+          - type: heading
+            heading: Alarm
+            heading_style: title
+            icon: mdi:alert-circle
+
+          - type: tile
+            entity: sensor.nibe_heat_pump_nibe_alarm
+            name: Alarmcode
+            icon: mdi:numeric
+          - type: tile
+            entity: sensor.nibe_alarm_text
+            name: Beschreibung
+            icon: mdi:text-short
+          - type: tile
+            entity: script.nibe_reset_alarm
+            name: Alarm zurücksetzen
+            icon: mdi:restart-alert
+            hide_state: true
+            tap_action:
+              action: perform-action
+              perform_action: script.nibe_reset_alarm
+
+      - type: grid
+        cards:
+          - type: heading
+            heading: Verdichter
+            heading_style: title
+            icon: mdi:engine
+
+          - type: tile
+            entity: sensor.nibe_heat_pump_nibe_compressor_frequency_actual
+            name: Frequenz ist
+          - type: tile
+            entity: sensor.nibe_heat_pump_nibe_compressor_frequency_request
+            name: Frequenz soll
+          - type: tile
+            entity: sensor.nibe_compressor_state
+            name: Status
+          - type: tile
+            entity: sensor.nibe_heat_pump_nibe_compressor_starts_eb100_ep14
+            name: Starts
+            icon: mdi:restart
+          - type: tile
+            entity: sensor.nibe_heat_pump_nibe_tot_op_time_compr_eb100_ep14
+            name: Laufzeit gesamt
+            icon: mdi:timer-outline
+          - type: tile
+            entity: sensor.nibe_heat_pump_nibe_compr_in_power
+            name: Aufnahmeleistung
+
+      - type: grid
+        cards:
+          - type: heading
+            heading: Zusatzheizung
+            heading_style: title
+            icon: mdi:heating-coil
+
+          - type: tile
+            entity: sensor.nibe_heat_pump_nibe_int_el_add_power
+            name: Leistung
+          - type: tile
+            entity: sensor.nibe_heat_pump_nibe_int_el_add_state
+            name: Aktive Stufen
+          - type: tile
+            entity: sensor.nibe_heat_pump_nibe_tot_op_time_add
+            name: Laufzeit gesamt
+            icon: mdi:timer-outline
+          - type: tile
+            entity: sensor.nibe_heat_pump_nibe_tot_hw_op_time_add
+            name: Laufzeit Warmwasser
+            icon: mdi:timer-outline
+
+      - type: grid
+        cards:
+          - type: heading
+            heading: Hydraulik
+            heading_style: title
+            icon: mdi:pipe
+
+          - type: tile
+            entity: sensor.nibe_heat_pump_nibe_ep14_gp2_brine_pump_status_ep14
+            name: Solepumpe
+            icon: mdi:pump
+          - type: tile
+            entity: sensor.nibe_heat_pump_nibe_supply_pump_speed_ep14
+            name: Heizungspumpe
+            icon: mdi:pump
+          - type: tile
+            entity: sensor.nibe_heat_pump_nibe_bf1_ep14_flow
+            name: Durchfluss
+            icon: mdi:waves-arrow-right
+          - type: tile
+            entity: sensor.nibe_heat_pump_nibe_eb100_ep14_bt12_condensor_out
+            name: Kondensator aus
+            icon: mdi:thermometer-chevron-up
+          - type: tile
+            entity: sensor.nibe_heat_pump_nibe_heat_medium_flow_dt_actual
+            name: ΔT ist
+          - type: tile
+            entity: sensor.nibe_heat_pump_nibe_heat_medium_flow_dt_set_point
+            name: ΔT soll
+
+      - type: grid
+        cards:
+          - type: heading
+            heading: Steuerung & Signale
+            heading_style: title
+            icon: mdi:transit-connection-variant
+
+          - type: tile
+            entity: sensor.nibe_heat_pump_nibe_prio
+            name: Priorität
+          - type: tile
+            entity: sensor.nibe_heat_pump_nibe_smart_home_mode
+            name: Smart Home Modus
+          - type: tile
+            entity: sensor.nibe_heat_pump_nibe_state_sg_ready
+            name: SG Ready Status
+          - type: tile
+            entity: sensor.nibe_heat_pump_nibe_sg_ready_input_a
+            name: SG Ready A
+          - type: tile
+            entity: sensor.nibe_heat_pump_nibe_sg_ready_input_b
+            name: SG Ready B
+          - type: tile
+            entity: sensor.nibe_heat_pump_nibe_eb100_ep14_pca_base_relays
+            name: PCA Relais

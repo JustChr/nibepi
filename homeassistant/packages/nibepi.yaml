@@ -1,0 +1,317 @@
+# ─────────────────────────────────────────────────────────────────────────────
+#  NibePi — Home Assistant helper package
+#
+#  Everything the NIBE pump itself cannot publish: derived thermal power, live
+#  COP, energy meters that the Energy dashboard accepts, alarm text, and the
+#  alarm reset call.
+#
+#  Install: copy to <config>/packages/nibepi.yaml and make sure configuration.yaml
+#  contains
+#      homeassistant:
+#        packages: !include_dir_named packages
+#
+#  Model: F1155 (ground source). Entity ids follow NibePi's MQTT discovery with
+#  device name "Nibe Heat Pump", i.e. <domain>.nibe_heat_pump_nibe_<register title>.
+#
+#  Requires these registers to be enabled in the NibePi UI (Registers tab):
+#      40072  BF1 EP14 Flow            — without it there is no heat output or COP
+#      43084  Int. el.add. Power       — immersion heater share of the input power
+#      43427  Compressor State EP14
+#      43086  Prio
+#  See homeassistant/README.md for the full recommended register list.
+# ─────────────────────────────────────────────────────────────────────────────
+
+template:
+  - sensor:
+      # ── Thermal output ────────────────────────────────────────────────────
+      # P = flow[l/min] × ΔT[K] × 4.186[kJ/kg·K] / 60 = flow × ΔT × 0.06977 kW
+      # The heat medium side is water, so no glycol correction is needed here.
+      #
+      # Supply is read from BT12 (condenser out) when register 40017 is enabled,
+      # and only falls back to BT2 otherwise. BT2 sits on climate system 1, past
+      # the QN10 diverter: while the pump is charging hot water the flow goes to
+      # the tank instead, BT2 stagnates, and BT2 − BT3 collapses to zero or goes
+      # negative — so on a BT2-only install there is no heat output and no COP
+      # outside the heating season. BT12 is upstream of QN10 and reads correctly
+      # in both modes, which is why enabling 40017 is worth the poll slot.
+      - name: Nibe Heat Output
+        unique_id: nibe_heat_output
+        unit_of_measurement: kW
+        device_class: power
+        state_class: measurement
+        icon: mdi:radiator
+        availability: >-
+          {{ has_value('sensor.nibe_heat_pump_nibe_bf1_ep14_flow')
+             and has_value('sensor.nibe_heat_pump_nibe_eb100_ep14_bt3_return_temp')
+             and (has_value('sensor.nibe_heat_pump_nibe_eb100_ep14_bt12_condensor_out')
+                  or has_value('sensor.nibe_heat_pump_nibe_bt2_supply_temp_s1')) }}
+        state: >-
+          {% set flow = states('sensor.nibe_heat_pump_nibe_bf1_ep14_flow') | float(0) %}
+          {% set sup  = states('sensor.nibe_heat_pump_nibe_eb100_ep14_bt12_condensor_out')
+                        | float(states('sensor.nibe_heat_pump_nibe_bt2_supply_temp_s1') | float(0)) %}
+          {% set ret  = states('sensor.nibe_heat_pump_nibe_eb100_ep14_bt3_return_temp') | float(0) %}
+          {% if flow > 0.5 and sup > ret %}
+            {{ (flow * (sup - ret) * 0.06977) | round(2) }}
+          {% else %}
+            0
+          {% endif %}
+
+      # ── Electrical input ──────────────────────────────────────────────────
+      # Inverter power to the compressor plus whatever the immersion heater draws.
+      # NOTE: register 43141 is the compressor's input power only — the brine and
+      # heat medium pumps and the control board are not included, so the COP below
+      # is a compressor COP and reads roughly 3–6 % optimistic versus a meter on
+      # the supply line.
+      - name: Nibe Electrical Input
+        unique_id: nibe_electrical_input
+        unit_of_measurement: kW
+        device_class: power
+        state_class: measurement
+        icon: mdi:flash
+        availability: "{{ has_value('sensor.nibe_heat_pump_nibe_compr_in_power') }}"
+        state: >-
+          {% set cpr = states('sensor.nibe_heat_pump_nibe_compr_in_power') | float(0) / 1000 %}
+          {% set add = states('sensor.nibe_heat_pump_nibe_int_el_add_power') | float(0) %}
+          {{ (cpr + add) | round(3) }}
+
+      # ── Live COP ──────────────────────────────────────────────────────────
+      # Deliberately unavailable while the compressor is off or barely loaded:
+      # a ratio of two near-zero numbers is noise, not a performance figure.
+      - name: Nibe COP
+        unique_id: nibe_cop
+        state_class: measurement
+        icon: mdi:gauge
+        availability: >-
+          {{ has_value('sensor.nibe_heat_output') and has_value('sensor.nibe_electrical_input')
+             and states('sensor.nibe_electrical_input') | float(0) > 0.15
+             and states('sensor.nibe_heat_output') | float(0) > 0.3 }}
+        state: >-
+          {{ (states('sensor.nibe_heat_output') | float
+              / states('sensor.nibe_electrical_input') | float) | round(2) }}
+
+      # ── Compressor state as text ──────────────────────────────────────────
+      # Register 43427's info string uses "20 = Stopped" (spaces around the =),
+      # which NibePi's state-map parser does not match, so the entity stays
+      # numeric and needs mapping here.
+      - name: Nibe Compressor State
+        unique_id: nibe_compressor_state_text
+        icon: mdi:engine
+        availability: "{{ has_value('sensor.nibe_heat_pump_nibe_compressor_state_ep14') }}"
+        state: >-
+          {% set m = {20: 'Stopped', 40: 'Starting', 60: 'Running', 100: 'Stopping'} %}
+          {{ m.get(states('sensor.nibe_heat_pump_nibe_compressor_state_ep14') | int(-1), 'Unknown') }}
+
+      # ── Alarm text ────────────────────────────────────────────────────────
+      # The alarm table is generated from lib/alarms.json — do not hand-edit the
+      # line between the markers. Regenerate with: node homeassistant/gen-alarms.js
+      - name: Nibe Alarm Text
+        unique_id: nibe_alarm_text
+        icon: mdi:alert-circle-outline
+        availability: "{{ has_value('sensor.nibe_heat_pump_nibe_alarm') }}"
+        state: >-
+          {% set code = states('sensor.nibe_heat_pump_nibe_alarm') | int(-1) %}
+          {# GENERATED-ALARM-MAP-BEGIN #}
+          {% set names = {1: 'Sensor fault BT1', 2: 'Sensor fault BT2', 3: 'Sensor fault BT3', 6: 'Sensor fault BT6', 7: 'Sensor fault BT7', 10: 'Sensor fault BT10', 11: 'Sensor fault BT11', 12: 'Sensor fault BT12', 16: 'Sensor fault BT16', 20: 'Sensor fault BT20 (AZ1)', 21: 'Sensor fault BT21 (AZ1)', 22: 'Sensor fault DEW-BT6', 25: 'Sensor fault BT25', 26: 'Sensor fault AZ1-BT26', 27: 'Sensor fault BP8', 28: 'Sensor fault BT71', 29: 'Sensor fault BT29', 31: 'Sensor fault BT63', 32: 'Sensor fault BS1', 33: 'Sensor fault EP30-BT53', 34: 'Sensor fault EP30-BT53 (solar)', 35: 'Sensor fault EM1-BT52', 37: 'Sensor fault EP21-BT2', 38: 'Sensor fault EP22-BT2', 39: 'Sensor fault EP23-BT2', 40: 'Sensor fault EQ1-BT64', 41: 'Compressor phase 1 missing', 42: 'Compressor phase 2 missing', 43: 'Faulty phase sequence', 44: 'Overheated softstart', 45: 'Phase fault', 50: 'High pressure alarm', 54: 'Motor protection alarm', 55: 'Hot gas alarm', 56: 'Incorrect serial number', 57: 'Incorrect firmware', 58: 'Pressure switch', 60: 'Low HTF out', 63: 'Low air flow', 64: 'Low exhaust air temperature', 65: 'High condensation water level', 66: 'High condensation water level (container)', 67: 'Antifreeze protection supply air', 69: 'Non-calibrated air flow sensor', 70: 'Perm. com. error input card', 71: 'Perm. com. error base card', 72: 'Perm. com. error softstart card', 73: 'Perm. com. error heating system 2', 74: 'Perm. com. error heating system 3', 75: 'Perm. com. error base card (AA26)', 76: 'Perm. com. error heating system 4', 77: 'Perm. com. error additive with shunt', 78: 'Perm. com. error pool', 79: 'Perm. com. error FLM', 83: 'Unsuccessful defrosting', 86: 'Perm. com. error SAM 40', 87: 'Perm. com. error step controlled additive', 88: 'Perm. com. error Solar', 89: 'Perm. com. error HPAC', 90: 'Perm. com. fault groundwater pump', 91: 'Perm. com. error HWC', 92: 'Perm. com. error DEW', 93: 'Perm. com. error 2-pipes cooling', 94: 'Perm. com. error PCD4', 95: 'Perm. com. error FJVM', 96: 'Perm. com. room unit zone 1', 97: 'Perm. com. room unit zone 2', 98: 'Perm. com. room unit zone 3', 99: 'Perm. com. room unit zone 4', 100: 'Perm. com. error inverter', 101: 'Sensor fault BT1 (temp.)', 102: 'Sensor fault BT2 (temp.)', 103: 'Sensor fault BT3 (temp.)', 104: 'Sensor fault BT4 (temp.)', 105: 'Sensor fault BT5 (temp.)', 106: 'Sensor fault BT6 (temp.)', 107: 'Sensor fault BT7 (temp.)', 108: 'Sensor fault BT8 (temp.)', 109: 'Sensor fault BT9 (temp.)', 110: 'Sensor fault BT10 (temp.)', 111: 'Sensor fault BT11 (temp.)', 112: 'Sensor fault BT12 (temp.)', 113: 'Sensor fault BT13 (temp.)', 114: 'Sensor fault BT14 (temp.)', 115: 'Sensor fault BT15 (temp.)', 116: 'Sensor fault BT16 (temp.)', 117: 'Sensor fault BT17 (temp.)', 118: 'Sensor fault BT18 (temp.)', 119: 'Sensor fault BT19 (temp.)', 120: 'Sensor fault BT20 (temp.)', 140: 'Compressor phase 1 missing (temp.)', 141: 'Compressor phase 2 missing (temp.)', 142: 'Compressor phase 3 missing (temp.)', 145: 'Temporary general phase fault', 150: 'High condensor out', 155: 'Hot gas alarm (temp.)', 158: 'Low defrost temperature', 159: 'High evaporator temperature', 160: 'Low HTF out (temp.)', 161: 'High HTF in', 162: 'High condensor out (temp.)', 163: 'High condensor in', 164: 'Low exhaust air temperature (temp.)', 166: 'Electrical anode incorrect', 170: 'Com. error input card', 171: 'Com. error base card', 172: 'Com. error softstart card', 173: 'Com. error heating system 2', 174: 'Com. error heating system 3', 175: 'Start-up of softstart card', 176: 'Com. error heating system 4', 177: 'Com. error addition with mixing valve', 178: 'Com. error pool', 179: 'Com. error FLM', 180: 'Freeze protection', 181: 'Failed periodic increase', 182: 'Load monitor activated', 183: 'Defrosting', 184: 'Filter alarm', 185: 'Anti-freeze supply air', 187: 'Com. error step controlled additional heat', 188: 'Com. fault solar', 189: 'Com. error HPAC', 190: 'Com. error ground water pump', 191: 'Com. error HWC', 192: 'Com. error 2 pipe cooling', 193: 'Com. error DEW', 194: 'Com. error PCD4', 195: 'Com. error FJVM', 196: 'Com. room unit zone 1', 197: 'Com. room unit zone 2', 198: 'Com. room unit zone 3', 199: 'Com. room unit zone 4', 200: 'Com. error inverter', 201: 'Inverter alarm', 202: 'Inverter fault', 203: 'Inverter error type I (perm.)', 204: 'Inverter error type II (perm.)', 205: 'Inverter error type III (perm.)', 206: 'Perm. com. error HW-comfort', 207: 'Com. error HW-comfort', 208: 'Com. error Acc-EB1', 209: 'Com. error ACC-EPxx', 213: 'Inverter error type I (temp.)', 214: 'Inverter error type II (temp.)', 215: 'Inverter error type III (temp.)', 216: 'Inverter alarm type II', 220: 'High pressure alarm (outdoor unit)', 221: 'Low pressure alarm (outdoor unit)', 222: 'Motor protection alarm (outdoor unit)', 223: 'Communication alarm (outdoor unit)', 224: 'Fan error (outdoor unit)', 225: 'Flow/return error (outdoor unit)', 227: 'Sensor fault (outdoor unit)', 228: 'Defrost fault (outdoor unit)', 229: 'Short compressor operation times', 230: 'Hot gas alarm (outdoor unit)', 231: 'Phase sequence error (outdoor unit)', 232: 'Low evaporation (outdoor unit)', 236: 'Sensor fault AZ2-BT20', 237: 'Sensor fault AZ2-BT21', 238: 'Sensor fault AZ2-BT26', 239: 'Sensor fault AZ3-BT20', 240: 'Sensor fault AZ3-BT21', 241: 'Sensor fault AZ3-BT26', 242: 'Sensor fault AZ4-BT20', 243: 'Sensor fault AZ4-BT21', 244: 'Sensor fault AZ4-BT26', 245: 'Com. error FLM 2', 247: 'Com. error FLM 4', 248: 'Communication fault (display/base card)', 250: 'Com. error ACC-SMS 40', 251: 'Com. error ACC Modbus 40', 252: 'Com. error slave', 253: 'Sensor fault QZ1-BT70', 255: 'Motor protection alarm, brine pump', 257: 'Com. error ACS45', 258: 'Sensor fault EQ1-BT57', 259: 'Sensor fault EQ1-BT75', 261: 'Temperature deviation heat exchanger sensor', 262: 'Overheat power transistor', 263: 'Incorrect voltage from inverter', 264: 'Com. error inverter circuit board', 265: 'Continuous error on power transistor', 266: 'Low refrigerant amount', 267: 'Inverter fault, boot failure', 268: 'Overcurrent, inverter A/F module', 270: 'Compressor preheating active', 271: 'Cold outdoor air (EB101)', 272: 'Hot outdoor air (EB101)', 273: 'HW-start/stop reset to factory settings', 274: 'Compressor phase overloaded', 275: 'Compressor phase overloaded (longtime)', 277: 'Sensor fault MHI exchanger', 278: 'Sensor fault MHI ambient air', 279: 'Sensor fault MHI discharge', 280: 'Sensor fault MHI suction', 281: 'Sensor fault MHI LP', 282: 'Com. error ACC-EQ1 (temp.)', 283: 'Com. error ACC-EQ1 (perm.)', 290: 'Fan alarm', 291: 'Charge pump alarm', 294: 'Not compatible heat pump', 299: 'Wrong version PCA Base', 301: 'Com. error slave 1', 302: 'Com. error slave 2', 303: 'Com. error slave 3', 304: 'Com. error slave 4', 305: 'Com. error slave 5', 306: 'Com. error slave 6', 307: 'Com. error slave 7', 308: 'Com. error slave 8', 325: 'Temperature limiter alarm (defrost element)', 326: 'Fault in EB16 (defrost failed)', 340: 'Anti-freeze supply air (BT22)', 351: 'Uncertain sensor accuracy (brine)', 352: 'Uncertain sensor accuracy (HM BT2/BT3)', 353: 'Uncertain sensor accuracy (HM BT3/BT12)', 354: 'Uncertain sensor accuracy, slave EB101', 355: 'Uncertain sensor accuracy (BT3/BT63)', 356: 'Failed sensor calibration', 372: 'Perm. com. error pool 2', 403: 'Sensor fault on EB101 (MHI-EMMY)', 404: 'Sensor fault on EB101 (MHI-EMMY, type 2)', 412: 'Sensor fault on EB101-BT12', 415: 'Sensor fault on EB101-BT15', 420: 'Inverter alarm type II (temp. comm)', 421: 'Inverter alarm type II (perm. comm)', 422: 'Inverter alarm type II (ext. input)', 423: 'Inverter alarm type II (ext. input, perm.)', 425: 'Triggered pressure switch', 426: 'Inverter alarm type III (temp.)', 427: 'Inverter alarm type III (perm.)', 428: 'Inverter alarm type III (internal, temp.)', 429: 'Inverter alarm type II (internal, perm.)', 430: 'Inverter alarm type I (phase too high)', 431: 'Inverter alarm type I (phase too high, perm.)', 432: 'Inverter alarm type I (phase too low)', 433: 'Inverter alarm type I (phase too low, perm.)', 434: 'Inverter alarm type I (phase missing)', 435: 'Inverter alarm type I (phase missing, perm.)', 436: 'Inverter alarm type II (internal fault)', 437: 'Inverter alarm type II (internal fault, perm.)', 438: 'Inverter alarm type II (overtemperature)', 439: 'Inverter alarm type II (overtemperature, perm.)', 440: 'Inverter alarm type II (power in too high)', 441: 'Inverter alarm type II (power in, perm.)', 442: 'Inverter alarm type II (max temp)', 443: 'Inverter alarm type II (max temp, perm.)', 444: 'Inverter alarm type II (internal)', 445: 'Inverter alarm type II (internal, perm.)', 446: 'Inverter alarm type II (phase missing)', 447: 'Inverter alarm type II (phase missing, perm.)', 448: 'Inverter alarm type II (below min speed)', 449: 'Inverter alarm type II (below min speed, perm.)', 452: 'Inverter alarm type II (power out too high)', 453: 'Inverter alarm type II (power out, perm.)', 454: 'Inverter alarm type II (high output)', 455: 'Inverter alarm type II (high output, perm.)', 460: 'Inverter alarm type II (1-phase power in)', 461: 'Inverter alarm type II (1-phase, perm.)', 995: 'External alarm (AUX input)', 996: 'External addition heat blocked', 997: 'External compressor blocked', 998: 'Display/machine restart'} %}
+          {# GENERATED-ALARM-MAP-END #}
+          {% if code == 0 %}No alarm
+          {% elif code < 0 %}Unknown
+          {% else %}{{ names.get(code, 'Alarm ' ~ code) }}{% endif %}
+
+      # ── Energy meters the Energy dashboard will accept ────────────────────
+      # NibePi's discovery does not set state_class, so the pump's own kWh
+      # registers cannot feed utility_meter or the Energy dashboard directly.
+      # These mirrors add the missing total_increasing class.
+      - name: Nibe Energy Heating Produced
+        unique_id: nibe_energy_heating_produced
+        unit_of_measurement: kWh
+        device_class: energy
+        state_class: total_increasing
+        availability: "{{ has_value('sensor.nibe_heat_pump_nibe_heat_meter_heat_cpr_and_add_ep14') }}"
+        state: "{{ states('sensor.nibe_heat_pump_nibe_heat_meter_heat_cpr_and_add_ep14') | float }}"
+
+      - name: Nibe Energy Hot Water Produced
+        unique_id: nibe_energy_hot_water_produced
+        unit_of_measurement: kWh
+        device_class: energy
+        state_class: total_increasing
+        availability: "{{ has_value('sensor.nibe_heat_pump_nibe_heat_meter_hw_cpr_and_add_ep14') }}"
+        state: "{{ states('sensor.nibe_heat_pump_nibe_heat_meter_hw_cpr_and_add_ep14') | float }}"
+
+      # ── Seasonal performance from the utility meters ──────────────────────
+      - name: Nibe COP Today
+        unique_id: nibe_cop_today
+        state_class: measurement
+        icon: mdi:chart-line
+        availability: >-
+          {{ has_value('sensor.nibe_electric_energy_daily')
+             and states('sensor.nibe_electric_energy_daily') | float(0) > 0.2 }}
+        state: >-
+          {% set heat = states('sensor.nibe_heating_energy_daily') | float(0) %}
+          {% set hw   = states('sensor.nibe_hot_water_energy_daily') | float(0) %}
+          {% set el   = states('sensor.nibe_electric_energy_daily') | float(0) %}
+          {{ ((heat + hw) / el) | round(2) }}
+
+      - name: Nibe COP Month
+        unique_id: nibe_cop_month
+        state_class: measurement
+        icon: mdi:chart-line
+        availability: >-
+          {{ has_value('sensor.nibe_electric_energy_monthly')
+             and states('sensor.nibe_electric_energy_monthly') | float(0) > 1 }}
+        state: >-
+          {% set heat = states('sensor.nibe_heating_energy_monthly') | float(0) %}
+          {% set hw   = states('sensor.nibe_hot_water_energy_monthly') | float(0) %}
+          {% set el   = states('sensor.nibe_electric_energy_monthly') | float(0) %}
+          {{ ((heat + hw) / el) | round(2) }}
+
+  - binary_sensor:
+      - name: Nibe Alarm Active
+        unique_id: nibe_alarm_active
+        device_class: problem
+        availability: "{{ has_value('sensor.nibe_heat_pump_nibe_alarm') }}"
+        state: "{{ states('sensor.nibe_heat_pump_nibe_alarm') | int(0) != 0 }}"
+
+      - name: Nibe Compressor Running
+        unique_id: nibe_compressor_running
+        device_class: running
+        icon: mdi:engine
+        availability: "{{ has_value('sensor.nibe_heat_pump_nibe_compressor_frequency_actual') }}"
+        state: "{{ states('sensor.nibe_heat_pump_nibe_compressor_frequency_actual') | float(0) > 0 }}"
+
+      - name: Nibe Immersion Heater Active
+        unique_id: nibe_immersion_heater_active
+        device_class: running
+        icon: mdi:heating-coil
+        availability: "{{ has_value('sensor.nibe_heat_pump_nibe_int_el_add_power') }}"
+        state: "{{ states('sensor.nibe_heat_pump_nibe_int_el_add_power') | float(0) > 0.05 }}"
+
+# ── Electrical energy by Riemann sum of the input power ──────────────────────
+sensor:
+  - platform: integration
+    source: sensor.nibe_electrical_input
+    name: Nibe Electric Energy
+    unique_id: nibe_electric_energy
+    unit_prefix: k
+    unit_time: h
+    method: left
+    round: 3
+
+# ── Daily / monthly buckets ─────────────────────────────────────────────────
+utility_meter:
+  nibe_heating_energy_daily:
+    name: Nibe Heating Energy Daily
+    source: sensor.nibe_energy_heating_produced
+    cycle: daily
+  nibe_heating_energy_monthly:
+    name: Nibe Heating Energy Monthly
+    source: sensor.nibe_energy_heating_produced
+    cycle: monthly
+  nibe_hot_water_energy_daily:
+    name: Nibe Hot Water Energy Daily
+    source: sensor.nibe_energy_hot_water_produced
+    cycle: daily
+  nibe_hot_water_energy_monthly:
+    name: Nibe Hot Water Energy Monthly
+    source: sensor.nibe_energy_hot_water_produced
+    cycle: monthly
+  nibe_electric_energy_daily:
+    name: Nibe Electric Energy Daily
+    source: sensor.nibe_electric_energy
+    cycle: daily
+  nibe_electric_energy_monthly:
+    name: Nibe Electric Energy Monthly
+    source: sensor.nibe_electric_energy
+    cycle: monthly
+
+# ── Alarm reset ─────────────────────────────────────────────────────────────
+# The reset register (45171) is edge-triggered: the pump acts on the 0 → 1
+# transition, so writing 1 over MQTT does nothing once it is latched at 1.
+# NibePi's HTTP endpoint emits the edge correctly — use it, not the number entity.
+# If you enabled Basic Auth in the NibePi UI, add username/password below.
+rest_command:
+  nibe_reset_alarm:
+    url: http://nibepi:1880/api/alarm/reset
+    method: POST
+    timeout: 15
+    # username: pi
+    # password: !secret nibepi_password
+
+script:
+  nibe_reset_alarm:
+    alias: Nibe — reset alarm
+    icon: mdi:restart-alert
+    mode: single
+    sequence:
+      - action: rest_command.nibe_reset_alarm
+        response_variable: reset
+      - if: "{{ (reset | default({})).get('status', 200) != 200 }}"
+        then:
+          - action: persistent_notification.create
+            data:
+              title: Nibe alarm reset failed
+              message: "NibePi returned HTTP {{ reset.status }}. The pump may be disconnected or the alarm already cleared."
+
+  nibe_hot_water_boost:
+    alias: Nibe — one time hot water increase
+    icon: mdi:water-boiler
+    mode: single
+    sequence:
+      - action: select.select_option
+        target:
+          entity_id: select.nibe_heat_pump_nibe_temporary_lux
+        data:
+          option: One time increase
+
+  nibe_hot_water_3h:
+    alias: Nibe — extra hot water for 3 h
+    icon: mdi:water-plus
+    mode: single
+    sequence:
+      - action: select.select_option
+        target:
+          entity_id: select.nibe_heat_pump_nibe_temporary_lux
+        data:
+          option: 3h
+
+  nibe_hot_water_cancel:
+    alias: Nibe — cancel temporary hot water
+    icon: mdi:water-off
+    mode: single
+    sequence:
+      - action: select.select_option
+        target:
+          entity_id: select.nibe_heat_pump_nibe_temporary_lux
+        data:
+          option: 'Off'
+
+automation:
+  - alias: Nibe — notify on alarm
+    id: nibe_alarm_notify
+    mode: single
+    triggers:
+      - trigger: state
+        entity_id: binary_sensor.nibe_alarm_active
+        to: 'on'
+        for: "00:00:30"
+    actions:
+      - action: persistent_notification.create
+        data:
+          notification_id: nibe_alarm
+          title: >-
+            Nibe alarm {{ states('sensor.nibe_heat_pump_nibe_alarm') }}
+          message: >-
+            {{ states('sensor.nibe_alarm_text') }}.
+            Outdoor {{ states('sensor.nibe_heat_pump_nibe_bt1_outdoor_temperature') }} °C,
+            supply {{ states('sensor.nibe_heat_pump_nibe_bt2_supply_temp_s1') }} °C.
+
+  - alias: Nibe — clear alarm notification
+    id: nibe_alarm_clear
+    mode: single
+    triggers:
+      - trigger: state
+        entity_id: binary_sensor.nibe_alarm_active
+        to: 'off'
+    actions:
+      - action: persistent_notification.dismiss
+        data:
+          notification_id: nibe_alarm

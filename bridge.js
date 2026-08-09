@@ -336,7 +336,12 @@ function handleFrame(buf, rmuFlag) {
         }
 
         const factor = Number(reg.factor) || 1;
-        const scaled = data / factor;
+        // `factor` may be fractional — 43141 counts in units of 10 W, so 0.1 —
+        // and a fractional divisor can leave float dust that String() would put
+        // on MQTT verbatim (7 / 0.3 is 23.333333333333336). The divisors in use
+        // happen to be exact over the register range; this keeps the next one
+        // that isn't from leaking a 17-digit state into Home Assistant.
+        const scaled = Math.round((data / factor) * 1e6) / 1e6;
         const min    = Number(reg.min);
         const max    = Number(reg.max);
 
@@ -494,6 +499,17 @@ function unitToDeviceClass(unit) {
     return undefined;
 }
 
+/** Home Assistant needs a state_class before it treats a sensor as a number.
+ *  Without one the entity is drawn as a timeline of strings rather than a graph,
+ *  is kept out of long-term statistics, and is refused by utility_meter and the
+ *  Energy dashboard — which is why registers with no unit, such as the heat
+ *  medium dT pair or the compressor start counter, arrive in HA as text. */
+function stateClassFor(reg) {
+    if (reg.unit === 'kWh' || reg.unit === 'h') return 'total_increasing';
+    if (/\bstarts\b/i.test(reg.titel || '')) return 'total_increasing';
+    return 'measurement';
+}
+
 function deviceBlock() {
     return {
         identifiers:  ['nibepi'],
@@ -556,6 +572,7 @@ function publishDiscovery(reg) {
             name: `Nibe ${reg.titel}`, unique_id: `nibepi_${address}`,
             state_topic: topic,
             device_class: unitToDeviceClass(reg.unit),
+            state_class: stateClassFor(reg),
             unit_of_measurement: reg.unit || undefined,
             device: deviceBlock(),
         };
@@ -563,6 +580,7 @@ function publishDiscovery(reg) {
             const fwd = Object.entries(stateMap).map(([k, v]) => `${k}: '${v}'`).join(', ');
             payload.value_template = `{%- set m = {${fwd}} -%}{{ m.get(value|int, value) }}`;
             delete payload.device_class;
+            delete payload.state_class;
             delete payload.unit_of_measurement;
         }
     }
