@@ -235,7 +235,10 @@ fstab, but the moment anything remounts it rw (an update saving config, an OTA) 
 never go back, and stays writable until the next reboot. It also writes swap to the SD
 card, exactly what the read-only root exists to prevent.
 
-`harden.sh` sets `Mechanism=zram`. Compressed RAM swap is retained, `/var/swap` and the
+`harden.sh` sets `Mechanism=zram` — as a drop-in at `/etc/rpi/swap.conf.d/99-nibepi-zram-only.conf`,
+**not** by editing `swap.conf` itself. That file is a dpkg conffile, so editing it makes every
+`rpi-swap` upgrade stop and ask whether to keep your version, and answering wrong silently
+restores the swap file and un-hardens the root filesystem. Compressed RAM swap is retained, `/var/swap` and the
 loop device are gone, and the root filesystem can return to read-only.
 
 ### DNS on a read-only root
@@ -329,11 +332,17 @@ R/W registers have an edit button. The editor adapts to the register type:
 | System Status | Pump model, firmware version, MQTT state, filesystem mode |
 | Alarm history | Up to 50 past alarms with start and end timestamps |
 | Memory chart | Bridge + backend RSS sampled hourly, last 2 weeks; hover or tap to inspect individual samples |
-| Filesystem mode | Toggle root filesystem between read-only (normal) and read-write (for manual edits) |
+| Filesystem mode | Toggle root filesystem between read-only (normal) and read-write (for manual edits) — **switch it back to read-only when done**, see below |
 | Log / Debug | Enable verbose logging and raw Modbus frame output |
 | Restart | Restart the bridge service (graceful zombie handover — pump stays connected) |
 | Software | Check for updates and install new releases OTA |
 | Config | Export config to file or restore from a backup |
+
+**Filesystem mode is sticky, and that matters.** The toggle persists as `system.readonly` in
+`config.json`, and saving config only remounts the root read-only again *when that flag is
+true*. So if you switch to read-write for some manual work and forget to switch back, the Pi
+keeps booting read-only from fstab but every later config save leaves it writable until the
+next reboot — quietly losing the SD-card protection. Switch it back when you are done.
 | Live log | Streams the last 500 log lines in real time |
 
 ---
