@@ -389,6 +389,47 @@ spotting a change in behaviour, not a substitute for a calibrated heat meter.
 
 ---
 
+## Wiring it into the Energy dashboard
+
+Settings → Dashboards → Energy → **Individual devices** → add a device:
+
+| Field | Entity |
+|---|---|
+| Energy consumption | `sensor.nibe_electric_energy` |
+| Power consumption *(optional)* | `sensor.nibe_electrical_input_total` |
+
+The energy field is what drives the hourly buckets, the totals and any cost
+accounting — that side reads the `sum` column of long-term statistics, which only
+exists for `total` / `total_increasing` sensors, so it has to be the kWh one. The
+power field is separate and additive: since 2025.12 the Energy dashboard also
+takes a power sensor per source and device to feed the live power graphs and the
+flow view.
+
+Pair the **total** with it, not `sensor.nibe_electrical_input`. The energy sensor
+is the Riemann integral of the total, so pairing it with the measured-only power
+would leave the live figure and the accumulating figure disagreeing by the pump
+term — a live 0 W during compressor-off periods while the counter kept climbing.
+The upside of getting it right is that the live graph shows the pump floor, which
+is precisely the consumption that was invisible before.
+
+**Do not add `sensor.nibe_energy_heating_produced` or
+`sensor.nibe_energy_hot_water_produced`.** They are kWh with `device_class:
+energy` and `state_class: total_increasing`, so the picker offers them as though
+they were electricity — but they are *thermal output*. Adding them reports
+roughly four times the real consumption and quietly wrecks the dashboard's
+arithmetic.
+
+One expectation to set: `sensor.nibe_electric_energy` is integrated from a partly
+modelled power figure and still omits standby and inverter conversion losses, so
+it reads a little under the true draw and will never reconcile against grid
+import. A gap in the MQTT stream makes this worse in a specific way — the
+integration uses `method: left`, which credits the whole gap at the last known
+power, so an outage mid-compressor-run inflates the total. Both are arguments for
+an actual meter on the supply line eventually; neither is a reason to change
+anything today.
+
+---
+
 ## Alarm reset
 
 Register 45171 is edge-triggered: the pump acts on the 0 → 1 transition, so
