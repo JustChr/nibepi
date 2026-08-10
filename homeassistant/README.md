@@ -369,7 +369,7 @@ this a one-place edit for the schematic.
 | `sensor.nibe_heat_output` | `flow[l/min] × ΔT[K] × 0.06977` | ΔT is **BT12 − BT3** where register 40017 is enabled, falling back to BT2 − BT3. Water on the heat medium side, so no glycol correction. Zero unless flow > 0.5 l/min and supply > return |
 | `sensor.nibe_electrical_input` | `43141 / 1000 + 43084` | Compressor inverter power plus immersion heater. **Excludes** the circulation pumps and control board. Register 43141 counts in units of **10 W**, not W — NibePi ≥ 1.4.6 scales it; before that it read a tenth of the truth and COP came out ten times too good |
 | `sensor.nibe_cop` | heat output ÷ electrical input | Therefore a *compressor* COP — roughly 3–6 % optimistic versus a meter on the supply line. Unavailable below 0.3 kW output, where the ratio is noise |
-| `sensor.nibe_electric_energy` | Riemann sum of electrical input | Integration platform, `method: left` |
+| `sensor.nibe_electric_energy` | Riemann sum of electrical input | Integration platform, `method: left`, **no `unit_prefix`**. The integration builds its unit as `<prefix><source unit><time>` and the source is already kW, so kW × h is kWh as it stands; asking for `k` gives `kkWh` and a result a further 1000× too small — which the Energy dashboard then charts as a flat zero |
 | `sensor.nibe_cop_today` / `_month` | (heat + hot water produced) ÷ electricity | Uses the pump's own heat meters, which are themselves estimates |
 
 The heat meter registers (44298 / 44300) are the pump's internal calculation, not

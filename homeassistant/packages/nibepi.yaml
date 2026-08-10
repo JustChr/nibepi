@@ -186,12 +186,14 @@ template:
         state: "{{ states('sensor.nibe_heat_pump_nibe_int_el_add_power') | float(0) > 0.05 }}"
 
 # ── Electrical energy by Riemann sum of the input power ──────────────────────
+# No unit_prefix: the integration builds its unit as <prefix><source unit><time>,
+# and the source is already kW. Asking for "k" gives "kkWh" and divides the
+# result by another 1000 — kW × h is kWh as it stands.
 sensor:
   - platform: integration
     source: sensor.nibe_electrical_input
     name: Nibe Electric Energy
     unique_id: nibe_electric_energy
-    unit_prefix: k
     unit_time: h
     method: left
     round: 3
