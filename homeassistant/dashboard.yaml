@@ -58,6 +58,10 @@ views:
         entity: sensor.nibe_cop
         name: COP
         color: purple
+      - type: entity
+        entity: sensor.nibe_cop_total
+        name: COP ges.
+        color: deep-purple
 
     sections:
       # ── the schematic, full width ──────────────────────────────────────────
@@ -281,6 +285,15 @@ views:
             name: Stromaufnahme
             icon: mdi:flash
             color: yellow
+
+          # Same figure plus the modelled circulators. The gap between the two
+          # tiles is the pump term — a few percent while the compressor runs,
+          # and everything there is while it does not.
+          - type: tile
+            entity: sensor.nibe_electrical_input_total
+            name: Stromaufnahme ges.
+            icon: mdi:flash-outline
+            color: amber
 
           - type: tile
             entity: binary_sensor.nibe_immersion_heater_active
@@ -1002,6 +1015,13 @@ views:
             entity: sensor.nibe_heat_pump_nibe_supply_pump_speed_ep14
             name: Heizungspumpe
             icon: mdi:pump
+          # Modelled from the speed tiles above, not metered — see the curves in
+          # packages/nibepi.yaml. Sits next to its two inputs on purpose.
+          - type: tile
+            entity: sensor.nibe_pump_power
+            name: Pumpenleistung
+            icon: mdi:lightning-bolt-outline
+            color: yellow
           - type: tile
             entity: sensor.nibe_heat_pump_nibe_bf1_ep14_flow
             name: Durchfluss

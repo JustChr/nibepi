@@ -56,12 +56,13 @@ template:
             0
           {% endif %}
 
-      # ── Electrical input ──────────────────────────────────────────────────
+      # ── Electrical input (measured only) ──────────────────────────────────
       # Inverter power to the compressor plus whatever the immersion heater draws.
-      # NOTE: register 43141 is the compressor's input power only — the brine and
-      # heat medium pumps and the control board are not included, so the COP below
-      # is a compressor COP and reads roughly 3–6 % optimistic versus a meter on
-      # the supply line.
+      # This is the measured pair and nothing else: register 43141 is the
+      # compressor's input power alone, so the circulation pumps, the control
+      # board and the inverter's own conversion losses are all absent. Kept
+      # deliberately free of estimates — Electrical Input Total below is the
+      # modelled version, and the two are meant to stay separable.
       - name: Nibe Electrical Input
         unique_id: nibe_electrical_input
         unit_of_measurement: kW
@@ -74,9 +75,70 @@ template:
           {% set add = states('sensor.nibe_heat_pump_nibe_int_el_add_power') | float(0) %}
           {{ (cpr + add) | round(3) }}
 
+      # ── Circulation pump power (modelled) ─────────────────────────────────
+      # Neither pump reports power, only commanded speed, so both are modelled
+      # from curves fitted to this machine in August 2026 — compressor idle,
+      # each pump metered directly, speed forced via 47414 / 47418:
+      #
+      #   GP2 brine    178 × n²             from 17 / 45 / 110 / 180 W at 30/50/80/100 %
+      #   GP1 heating  7.6 + 52.4 × n^3.36  from 10 / 17 /  32 /  60 W at 40/60/80/100 %
+      #
+      # The exponents differ because the circuits do. Cold glycol in long
+      # ground-loop pipe runs laminar-to-transitional, where pressure drop
+      # scales with flow rather than flow squared, so the brine pump lands on a
+      # clean square law with no measurable offset. The heating circuit is
+      # warmer water in a shorter loop, turbulent, and comes out near-cubic on
+      # a 7.6 W electronics floor. Both fit their four points inside 0.4 W.
+      #
+      # GP1 keeps the heating curve during hot water. The tank coil is a more
+      # restrictive path so the real HW draw is somewhat lower, but the gap is
+      # a few watts across roughly a fifth of runtime — under 0.1 % of input
+      # power, and not worth forcing QN10 to measure.
+      - name: Nibe Pump Power
+        unique_id: nibe_pump_power
+        unit_of_measurement: W
+        device_class: power
+        state_class: measurement
+        icon: mdi:pump
+        availability: >-
+          {{ has_value('sensor.nibe_heat_pump_nibe_supply_pump_speed_ep14')
+             and has_value('sensor.nibe_heat_pump_nibe_ep14_gp2_brine_pump_status_ep14') }}
+        state: >-
+          {% set gp1 = states('sensor.nibe_heat_pump_nibe_supply_pump_speed_ep14') | float(0) %}
+          {% set gp2 = states('sensor.nibe_heat_pump_nibe_ep14_gp2_brine_pump_status_ep14') | float(0) %}
+          {% set p1 = 7.6 + 52.4 * (gp1 / 100) ** 3.36 if gp1 > 0 else 0 %}
+          {% set p2 = 178 * (gp2 / 100) ** 2 if gp2 > 0 else 0 %}
+          {{ (p1 + p2) | round(1) }}
+
+      # ── Electrical input including the modelled terms ─────────────────────
+      # Measured compressor and immersion heater, plus the two circulation
+      # pumps above, plus a standby constant for the control board and display.
+      #
+      # standby_w is 0 because it could not be measured: on a 3×400 V feed some
+      # 15 W is about 0.02 A per phase, far below what a clamp meter resolves.
+      # Zero is known to be wrong — the board draws something around the clock,
+      # so this omits on the order of 130 kWh/yr from the energy totals below.
+      # If a meter ever goes on the supply line, that one line is the only edit
+      # needed. Still absent either way: inverter conversion losses.
+      - name: Nibe Electrical Input Total
+        unique_id: nibe_electrical_input_total
+        unit_of_measurement: kW
+        device_class: power
+        state_class: measurement
+        icon: mdi:flash-outline
+        availability: "{{ has_value('sensor.nibe_electrical_input') }}"
+        state: >-
+          {% set standby_w = 0 %}
+          {% set meas  = states('sensor.nibe_electrical_input') | float(0) %}
+          {% set pumps = states('sensor.nibe_pump_power') | float(0) %}
+          {{ (meas + (pumps + standby_w) / 1000) | round(3) }}
+
       # ── Live COP ──────────────────────────────────────────────────────────
       # Deliberately unavailable while the compressor is off or barely loaded:
       # a ratio of two near-zero numbers is noise, not a performance figure.
+      #
+      # This one is a compressor COP — measured numerator and denominator, no
+      # estimates, but flattered by everything the denominator leaves out.
       - name: Nibe COP
         unique_id: nibe_cop
         state_class: measurement
@@ -88,6 +150,22 @@ template:
         state: >-
           {{ (states('sensor.nibe_heat_output') | float
               / states('sensor.nibe_electrical_input') | float) | round(2) }}
+
+      # The same ratio against the modelled input, so it carries the pumps.
+      # Runs roughly 3–5 % below Nibe COP at part load; that gap is the two
+      # circulators. The more honest figure of the pair, as long as you keep in
+      # mind the pump term is fitted rather than metered.
+      - name: Nibe COP Total
+        unique_id: nibe_cop_total
+        state_class: measurement
+        icon: mdi:gauge-full
+        availability: >-
+          {{ has_value('sensor.nibe_heat_output') and has_value('sensor.nibe_electrical_input_total')
+             and states('sensor.nibe_electrical_input_total') | float(0) > 0.15
+             and states('sensor.nibe_heat_output') | float(0) > 0.3 }}
+        state: >-
+          {{ (states('sensor.nibe_heat_output') | float
+              / states('sensor.nibe_electrical_input_total') | float) | round(2) }}
 
       # ── Compressor state as text ──────────────────────────────────────────
       # Register 43427's info string uses "20 = Stopped" (spaces around the =),
@@ -189,9 +267,14 @@ template:
 # No unit_prefix: the integration builds its unit as <prefix><source unit><time>,
 # and the source is already kW. Asking for "k" gives "kkWh" and divides the
 # result by another 1000 — kW × h is kWh as it stands.
+#
+# Integrated from the *total*, not the measured input, because the pumps run
+# during compressor-off periods where nibe_electrical_input reads a flat zero.
+# Those hours are real kWh and used to vanish entirely. The accumulated history
+# is kept; only the rate changes from here on, by roughly 30–60 W.
 sensor:
   - platform: integration
-    source: sensor.nibe_electrical_input
+    source: sensor.nibe_electrical_input_total
     name: Nibe Electric Energy
     unique_id: nibe_electric_energy
     unit_time: h
