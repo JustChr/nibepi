@@ -28,12 +28,12 @@ template:
       # The heat medium side is water, so no glycol correction is needed here.
       #
       # Supply is read from BT12 (condenser out) when register 40017 is enabled,
-      # and only falls back to BT2 otherwise. BT2 sits on climate system 1, past
-      # the QN10 diverter: while the pump is charging hot water the flow goes to
-      # the tank instead, BT2 stagnates, and BT2 − BT3 collapses to zero or goes
-      # negative — so on a BT2-only install there is no heat output and no COP
-      # outside the heating season. BT12 is upstream of QN10 and reads correctly
-      # in both modes, which is why enabling 40017 is worth the poll slot.
+      # and falls back to BT2 otherwise. BT2 works: measured on an F1155 during a
+      # hot water charge (Prio 20), BT2 56.0 °C against BT3 51.3 °C at 9.8 l/min,
+      # so it tracks the charge circuit rather than stagnating. BT12 is preferred
+      # only because it is the condenser outlet proper — upstream of QN10 and of
+      # any external mixing — so it stays the same measurement whichever way the
+      # diverter points. Enabling 40017 is a refinement, not a prerequisite.
       - name: Nibe Heat Output
         unique_id: nibe_heat_output
         unit_of_measurement: kW

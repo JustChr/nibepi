@@ -193,7 +193,7 @@ marked **required** are the ones without which whole cards stay empty.
 | Register | Title | Why |
 |---|---|---|
 | **40072** | BF1 EP14 Flow | **Required** — no flow, no heat output, no COP |
-| **40017** | EB100-EP14-BT12 Condensor Out | **Required** — the only supply sensor upstream of QN10, so the only one that gives heat output during hot water production too |
+| 40017 | EB100-EP14-BT12 Condensor Out | Recommended — the condenser outlet proper, upstream of QN10 and of any external mixing, so heat output is the same measurement whichever way the diverter points. Heat output falls back to BT2 without it, which measures fine in both modes |
 | **43084** | Int. el.add. Power | **Required** — immersion heater share of input power |
 | **43427** | Compressor State EP14 | **Required** — stopped / starting / running / stopping |
 | **43086** | Prio | **Required** — drives the card's active-branch highlight |
