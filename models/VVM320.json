@@ -25,7 +25,7 @@
 {"register":"40079","factor":10,"size":"u32","mode":"R","titel":"EB100-BE3 Current","info":"","unit":"A","min":"0","max":"0"},
 {"register":"40081","factor":10,"size":"u32","mode":"R","titel":"EB100-BE2 Current","info":"","unit":"A","min":"0","max":"0"},
 {"register":"40083","factor":10,"size":"u32","mode":"R","titel":"EB100-BE1 Current","info":"","unit":"A","min":"0","max":"0"},
-{"register":"40121","factor":10,"size":"s16","mode":"R","titel":"BT63 Add Supply Temp","info":"","unit":"ºC","min":"0","max":"0"},
+{"register":"40121","factor":10,"size":"s16","mode":"R","titel":"BT63 Add Supply Temp","info":"","unit":"°C","min":"0","max":"0"},
 {"register":"40127","factor":10,"size":"s16","mode":"R","titel":"EP23-BT3 Return temp S4","info":"Return temperature for system 4","unit":"°C","min":"0","max":"0"},
 {"register":"40128","factor":10,"size":"s16","mode":"R","titel":"EP22-BT3 Return temp S3","info":"Return temperature for system 3","unit":"°C","min":"0","max":"0"},
 {"register":"40129","factor":10,"size":"s16","mode":"R","titel":"EP21-BT3 Return temp S2","info":"Return temperature for system 2","unit":"°C","min":"0","max":"0"},
