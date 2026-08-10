@@ -15,42 +15,53 @@ energy meters the Energy dashboard accepts.
 
 ## The centrepiece
 
-`nibepi-flow-card` draws the installation the way the pump's own documentation
-draws it — a single-line hydraulic schematic — rendered in Home Assistant's
-visual language: flat surfaces, HA colour tokens, tabular numerals, restrained
-motion. Four layers, top to bottom:
+`nibepi-flow-card` draws the installation as a picture of the house rather than
+a page from the wiring manual, rendered in Home Assistant's visual language:
+flat surfaces, HA colour tokens, tabular numerals, restrained motion. Four
+layers, top to bottom:
 
 1. **Summary row** — heat output, electrical input, live COP, COP today.
-2. **The schematic** — borehole below a hatched ground line, the machine outline
-   containing the refrigerant circuit, the QN10 diverter, radiators and tank.
+2. **The schematic** — sun and outside temperature, borehole below a hatched
+   ground line, the machine outline containing the refrigerant circuit, the
+   diverter, a house whose floor is the heating loop, and a hot water cylinder.
    Drawn twice: landscape for a wide card, portrait for a phone (see below).
 3. **House heat demand** — the degree minute register, reframed (see below).
 4. **Grouped detail rows** — eight groups covering the heating circuit, hot
    water, ground loop, compressor, immersion heater, electrical, energy and
    control signals.
 
-It is a circuit diagram, not a flow chart:
+It is a picture of the installation, not a page of designations:
 
-- **NIBE's own designations.** Components are labelled `EB100 · EP14`, `GP1`,
-  `GP2`, `QN10`; measuring points are annotated with the sensor tags from the
-  wiring diagram — `BT2`, `BT3`, `BT6`, `BT7`, `BT10`, `BT11`, `BT50` — each with
-  its live value beside it. The drawing and the manual use the same names. A tag
-  with no entity behind it is removed from the drawing rather than left showing a
-  dash, so a tank with BT6 but no BT7 gets a diagram of the tank it actually has.
-- **The refrigerant circuit is drawn.** Inside the machine outline: evaporator,
-  compressor, condenser, expansion valve, with the brine entering the evaporator
-  and the heat medium leaving the condenser. That is what makes the drawing
-  explain *how* heat gets from the ground to the radiators rather than just
-  asserting that it does. It has its own colour and line weight so it never
-  reads as one of the water circuits, and it circulates whenever the compressor
-  turns.
+- **Everything is named for what it is.** "From ground", "To ground", "Supply",
+  "Return", "Room", "Tank top", "Tank bottom", "Heating pump", "Ground pump" —
+  each with its live value under it. The NIBE designations are still one tap
+  away: every reading opens its own more-info dialog, and the detail rows below
+  carry the entity names. A measuring point with no entity behind it is removed
+  from the drawing rather than left showing a dash, so a tank with BT6 but no
+  BT7 gets a diagram of the tank it actually has.
+- **The consumers are drawn as the things they are.** Hot water is a cylinder
+  with a coil in its lower half and a fill that takes the colour of the water in
+  it; the heating system is a house in elevation whose floor slab contains the
+  loop, tinted with the supply temperature when it is being fed. The heating
+  supply does not stop at the wall and the hot water supply does not stop at the
+  tank — each runs on *into* its serpentine, so the flow dots travel through the
+  thing being heated and the return picks up where that serpentine ends.
+- **The refrigerant circuit is drawn.** Inside the machine outline: the exchanger
+  that takes heat from the ground, the compressor, the exchanger that gives it to
+  the water, and the pressure drop back. That is what makes the drawing explain
+  *how* heat gets from the ground into the floor rather than just asserting that
+  it does. It has its own colour and line weight so it never reads as one of the
+  water circuits, and it circulates whenever the compressor turns.
 - **Every loop is closed**, with flow and return as separate routed pipes and a
   direction arrow on each leg, so the circuit still reads when everything has
   stopped. The two returns share the bottom header, as they do on the real
   installation.
-- **Standard symbols**: circulation pumps as circle-and-triangle, the compressor
-  as a bar-and-wedge, plate heat exchangers as a box with a diagonal, the
-  expansion valve as a bowtie, the tank exchanger as a serpentine coil.
+- **Symbols stay standard** where they carry meaning: circulation pumps as
+  circle-and-triangle, the compressor as a bar-and-wedge, plate heat exchangers
+  as a box with a diagonal, the expansion valve as a bowtie.
+- **Labels have a background-coloured halo** (`paint-order: stroke`), which is
+  what allows a reading to sit directly on the pipe or the tank wall it belongs
+  to instead of being parked in a legend.
 
 What is live:
 
@@ -65,8 +76,10 @@ What is live:
   actually moving.
 - **The compressor ring shows load** — register 43136 as a fraction of the
   20–120 Hz range. A static arc, not a spinning graphic.
-- **QN10 points at the active branch** and the idle branch dims — `Prio` decides
-  whether heating or hot water is being served.
+- **The diverter points at the active branch** and the idle branch's pipework
+  dims — `Prio` decides whether heating or hot water is being served. The
+  readings themselves never dim: a tank temperature is still true when the valve
+  is pointing the other way.
 - **Alarms surface at the top** with human-readable text for all 265 codes from
   NibePi's own alarm table, not just the number.
 
@@ -77,9 +90,9 @@ to fit a phone puts its labels below legibility. So the schematic is drawn twice
 by hand:
 
 - **Landscape** (1040 × 500) — ground on the left, house on the right.
-- **Portrait** (340 × 1010) — same circuit, same tags, same live channels, but
+- **Portrait** (340 × 1010) — same circuit, same labels, same live channels, but
   stacked the way the installation actually sits: ground and borehole at the
-  bottom, machine above it, radiators and tank at the top, with the supply trunk
+  bottom, machine above it, house and tank at the top, with the supply trunk
   up the right edge and the return trunk down the left.
 
 A **ResizeObserver on the card's own box** picks one, so a narrow dashboard column
@@ -197,7 +210,7 @@ marked **required** are the ones without which whole cards stay empty.
 | **43084** | Int. el.add. Power | **Required** — immersion heater share of input power |
 | **43427** | Compressor State EP14 | **Required** — stopped / starting / running / stopping |
 | **43086** | Prio | **Required** — drives the card's active-branch highlight |
-| 40013 | BT7 HW Top | Tank top temperature — **only if the tank has a BT7**. Many F1155 installs have BT6 alone; leave it off and the card drops the BT7 pill from the drawing by itself |
+| 40013 | BT7 HW Top | Tank top temperature — **only if the tank has a BT7**. Many F1155 installs have BT6 alone; leave it off and the card drops the "Tank top" reading from the drawing by itself |
 | 47007 | Heat Curve S1 | Curve selection |
 | 47011 | Heat Offset S1 | The real "make it warmer" knob |
 | 47394 | Use room sensor S1 | Room sensor on/off |
@@ -248,7 +261,7 @@ cp nibepi-card.js /config/www/nibepi-card.js
 
 Register it under **Settings → Dashboards → ⋮ → Resources → Add resource**:
 
-- URL `/local/nibepi-card.js?v=3.2.2`
+- URL `/local/nibepi-card.js?v=3.3.0`
 - Type **JavaScript module**
 
 **Keep the `?v=` and bump it on every update.** Home Assistant serves `/local/`
@@ -257,18 +270,18 @@ loaded the card once will not go back for a new one, no matter what you copy ove
 the file on disk. Changing the query string is what actually invalidates it; a
 normal reload will not.
 
-The console should log `NIBEPI-FLOW-CARD v3.2.2` on load. If it reports an older
+The console should log `NIBEPI-FLOW-CARD v3.3.0` on load. If it reports an older
 version, the browser is serving a cached copy and nothing else you change will
 have any effect. Two ways to check what is really running:
 
 ```js
-customElements.get('nibepi-flow-card').version     // -> "3.2.2"
+customElements.get('nibepi-flow-card').version     // -> "3.3.0"
 ```
 
 and the card logs its own layout decision whenever it changes:
 
 ```
-NIBEPI-FLOW-CARD v3.2.2: card 1532px -> landscape (layout: auto, wide_at: 900)
+NIBEPI-FLOW-CARD v3.3.0: card 1532px -> landscape (layout: auto, wide_at: 900)
 ```
 
 That line distinguishes the two reasons the schematic can come out portrait — a

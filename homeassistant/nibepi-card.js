@@ -2,16 +2,15 @@
  * nibepi-flow-card — live hydraulic schematic for NIBE heat pumps
  * Part of the NibePi project (https://github.com/JustChr/nibepi) · MIT
  *
- * Drawn the way the pump's own documentation draws it: a single-line hydraulic
- * schematic with NIBE's component designations (EB100, EP14, GP1, GP2, QN10) and
- * sensor tags (BT2, BT3, BT6, BT7, BT10, BT11, BT50) annotating the measuring
- * points, the borehole below a hatched ground line, and the refrigerant circuit
- * — evaporator, compressor, condenser, expansion valve — inside the machine
- * outline, so the drawing shows how the heat actually gets from the ground to
- * the radiators.
+ * A picture of the installation rather than a wiring diagram: the borehole below
+ * a hatched ground line, the machine outline with its refrigerant circuit, a
+ * house whose floor is the heating loop, and a hot water cylinder. Every
+ * measuring point is named for what it is — "From ground", "Tank top", "Room" —
+ * not for its NIBE sensor tag; the designations live in the detail rows and the
+ * more-info dialogs, which is where someone who wants BT6 will look.
  *
  * The schematic exists in two hand-drawn geometries rather than one that
- * squashes: LANDSCAPE for a wide card, and PORTRAIT — same circuit, same tags,
+ * squashes: LANDSCAPE for a wide card, and PORTRAIT — same circuit, same labels,
  * ground at the bottom and the house at the top — for a phone. A ResizeObserver
  * on the card's own box picks one, so a narrow dashboard column on a big screen
  * gets the portrait drawing too. Landscape takes over at `wide_at` px of card
@@ -25,7 +24,7 @@
  *     node homeassistant/gen-alarms.js
  */
 
-const CARD_VERSION = '3.2.2';
+const CARD_VERSION = '3.3.0';
 
 // Card content width, in px, at which the landscape sheet takes over. The
 // landscape drawing is 1040 units wide, so below this it renders at under ~0.87×
@@ -47,10 +46,12 @@ const ALARMS = (() => {
 
 const LABELS = {
     en: {
-        heatpump: 'Heat pump', outdoor: 'Outdoor', avg: 'avg', idle: 'Idle', alarm: 'Alarm',
-        cGround: 'Ground loop', cEvap: 'Evaporator', cCompressor: 'Compressor',
-        cCond: 'Condenser', cValve: 'Expansion valve', cValveShort: 'Exp. valve',
-        cHeating: 'Heating system', cHotwater: 'Hot water',
+        heatpump: 'Heat pump', outdoor: 'Outside', avg: 'avg', idle: 'Idle', alarm: 'Alarm',
+        cGround: 'Ground loop', cEvap: 'Heat from ground', cCompressor: 'Compressor',
+        cCond: 'Heat to water', cValve: 'Pressure drop', cValveShort: 'Pressure drop',
+        cHeating: 'Floor heating', cHotwater: 'Hot water',
+        pumpHeat: 'Heating pump', pumpGround: 'Ground pump',
+        nGroundIn: 'From ground', nGroundOut: 'To ground', nTankLow: 'Tank bottom',
         sHeat: 'Heat output', sPower: 'Electrical input', sCop: 'COP', sCopToday: 'COP today',
         demand: 'House heat demand', demandUnit: 'DM',
         demandStart: 'Compressor starts at {n} DM',
@@ -84,9 +85,11 @@ const LABELS = {
     },
     de: {
         heatpump: 'Wärmepumpe', outdoor: 'Außen', avg: 'Mittel', idle: 'Bereitschaft', alarm: 'Alarm',
-        cGround: 'Erdsonde', cEvap: 'Verdampfer', cCompressor: 'Verdichter',
-        cCond: 'Kondensator', cValve: 'Expansionsventil', cValveShort: 'Exp.ventil',
-        cHeating: 'Heizsystem', cHotwater: 'Warmwasser',
+        cGround: 'Erdsonde', cEvap: 'Wärme aus dem Boden', cCompressor: 'Verdichter',
+        cCond: 'Wärme ins Wasser', cValve: 'Entspannung', cValveShort: 'Entspannung',
+        cHeating: 'Fußbodenheizung', cHotwater: 'Warmwasser',
+        pumpHeat: 'Heizungspumpe', pumpGround: 'Solepumpe',
+        nGroundIn: 'Vom Boden', nGroundOut: 'Zum Boden', nTankLow: 'Speicher unten',
         sHeat: 'Wärmeleistung', sPower: 'Stromaufnahme', sCop: 'COP', sCopToday: 'COP heute',
         demand: 'Wärmebedarf des Hauses', demandUnit: 'GM',
         demandStart: 'Verdichter startet bei {n} GM',
@@ -126,12 +129,44 @@ const PRIO_TEXT = {
     off: 10, 'hot water': 20, heat: 30, pool: 40, 'pool 2': 41, transfer: 50, cooling: 60,
 };
 
+/** Serpentine heat exchanger: `passes` horizontal runs joined by rounded returns
+ *  that bulge outward. `fromRight` picks the side the coil starts on, so it can
+ *  be attached to whichever side the supply pipe actually arrives from; with an
+ *  even number of passes it finishes on the other side, with an odd number it
+ *  comes back to the same one. */
+function coilPath(xL, xR, yTop, gap, passes, fromRight = true) {
+    let x = fromRight ? xR : xL;
+    let d = `M${x} ${yTop}`;
+    for (let i = 0; i < passes; i++) {
+        const y = yTop + i * gap;
+        const to = x === xR ? xL : xR;
+        d += ` H${to}`;
+        if (i < passes - 1) {
+            const sweep = to === xR ? 1 : 0;
+            d += ` A${gap / 2} ${gap / 2} 0 0 ${sweep} ${to} ${y + gap}`;
+        }
+        x = to;
+    }
+    return d;
+}
+
+/** The same coil as a continuation of a path that has already arrived at its
+ *  start point: the leading move is dropped so the pen draws in rather than
+ *  jumping, which is what lets the floor loop and the tank coil be the live
+ *  supply pipe itself instead of decoration beside it. */
+const coilSeg = (...a) => coilPath(...a).replace(/^M[\d.]+ [\d.]+ /, '');
+
 // ── schematic geometry ───────────────────────────────────────────────────────
-// Two hand-drawn layouts of the same circuit. Both use the same pipe keys, the
-// same temperature source per pipe and the same driving pump, so one paint pass
-// serves either. `temp` names the entity whose value colours that pipe; `pump` is
-// which circulation pump sets its dash speed; `branch` marks the legs that dim
-// when Prio has selected the other consumer.
+// Two hand-drawn layouts of the same installation. Both use the same pipe keys,
+// the same temperature source per pipe and the same driving pump, so one paint
+// pass serves either. `temp` names the entity whose value colours that pipe;
+// `pump` is which circulation pump sets its dash speed; `branch` marks the legs
+// that dim when Prio has selected the other consumer.
+//
+// The heating supply does not stop at the house wall and the hot water supply
+// does not stop at the tank: each one runs on into its serpentine — the floor
+// loop, the tank coil — so the dots actually travel through the thing being
+// heated, and the return picks up where that serpentine ends.
 const LAYOUTS = {
     // ── landscape: ground on the left, house on the right ────────────────────
     wide: {
@@ -147,20 +182,22 @@ const LAYOUTS = {
             },
             hm_sup: { d: 'M572 162 H700', temp: 'supply', pump: 'hm', arrows: [[686, 162, 0]] },
             heat_sup: {
-                d: 'M725 162 H802 V140 H852', temp: 'supply', pump: 'hm',
-                arrows: [[836, 140, 0]], branch: 'heating',
+                d: `M725 162 H792 V220 H850 ${coilSeg(850, 982, 220, 11, 3, false)}`,
+                temp: 'supply', pump: 'hm',
+                arrows: [[792, 194, 90], [906, 220, 0]], branch: 'heating',
             },
             heat_ret: {
-                d: 'M990 190 H1015 V470 H616 V202 H572', temp: 'return', pump: 'hm',
-                arrows: [[1015, 340, 90], [700, 470, 180]], branch: 'heating',
+                d: 'M982 242 H1022 V476 H616 V202 H572', temp: 'return', pump: 'hm',
+                arrows: [[1022, 360, 90], [790, 476, 180]], branch: 'heating',
             },
             hw_sup: {
-                d: 'M712 175 V344 H872', temp: 'supply', pump: 'hm',
-                arrows: [[712, 290, 90]], branch: 'hotwater',
+                d: `M712 175 V360 H866 ${coilSeg(866, 966, 360, 13, 4, false)}`,
+                temp: 'supply', pump: 'hm',
+                arrows: [[712, 280, 90]], branch: 'hotwater',
             },
             hw_ret: {
-                d: 'M872 404 H812 V470 H616 V202 H572', temp: 'return', pump: 'hm',
-                arrows: [[812, 440, 90]], branch: 'hotwater',
+                d: 'M866 399 H812 V476 H616 V202 H572', temp: 'return', pump: 'hm',
+                arrows: [[812, 444, 90]], branch: 'hotwater',
             },
         },
         refrigerant: [
@@ -188,20 +225,22 @@ const LAYOUTS = {
                 arrows: [[288, 440, 0]],
             },
             heat_sup: {
-                d: 'M310 388 V66 H286', temp: 'supply', pump: 'hm',
-                arrows: [[310, 150, -90]], branch: 'heating',
+                d: `M310 388 V160 H260 ${coilSeg(80, 260, 160, 11, 3, true)}`,
+                temp: 'supply', pump: 'hm',
+                arrows: [[310, 280, -90], [196, 160, 180]], branch: 'heating',
             },
             heat_ret: {
-                d: 'M54 66 H30 V440 H180 V482', temp: 'return', pump: 'hm',
-                arrows: [[30, 140, 90]], branch: 'heating',
+                d: 'M80 182 H30 V440 H180 V482', temp: 'return', pump: 'hm',
+                arrows: [[56, 182, 180], [30, 300, 90]], branch: 'heating',
             },
             hw_sup: {
-                d: 'M298 400 V230 H250', temp: 'supply', pump: 'hm',
-                arrows: [[298, 320, -90]], branch: 'hotwater',
+                d: `M298 400 V300 H262 ${coilSeg(78, 262, 300, 12, 5, true)}`,
+                temp: 'supply', pump: 'hm',
+                arrows: [[298, 356, -90]], branch: 'hotwater',
             },
             hw_ret: {
-                d: 'M90 302 H30 V440 H180 V482', temp: 'return', pump: 'hm',
-                arrows: [[30, 380, 90]], branch: 'hotwater',
+                d: 'M78 348 H30 V440 H180 V482', temp: 'return', pump: 'hm',
+                arrows: [[30, 400, 90]], branch: 'hotwater',
             },
         },
         refrigerant: [
@@ -254,27 +293,6 @@ function tempColor(v) {
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const fmt = (v, d = 1) => (v === null || Number.isNaN(v) ? '–' : v.toFixed(d));
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-
-/** Serpentine tank heat exchanger: `passes` horizontal runs joined by rounded
- *  returns that bulge outward. `fromRight` picks the side the coil starts on, so
- *  it can be attached to whichever side the supply pipe actually arrives from;
- *  with an even number of passes it finishes on the other side, with an odd
- *  number it comes back to the same one. */
-function coilPath(xL, xR, yTop, gap, passes, fromRight = true) {
-    let x = fromRight ? xR : xL;
-    let d = `M${x} ${yTop}`;
-    for (let i = 0; i < passes; i++) {
-        const y = yTop + i * gap;
-        const to = x === xR ? xL : xR;
-        d += ` H${to}`;
-        if (i < passes - 1) {
-            const sweep = to === xR ? 1 : 0;
-            d += ` A${gap / 2} ${gap / 2} 0 0 ${sweep} ${to} ${y + gap}`;
-        }
-        x = to;
-    }
-    return d;
-}
 
 class NibepiFlowCard extends HTMLElement {
     constructor() {
@@ -371,13 +389,54 @@ class NibepiFlowCard extends HTMLElement {
             arrows: (id, list) => list.map(([x, y, r], i) =>
                 `<path class="arrow" id="${v}_a_${id}_${i}" d="M -3.4 -3.6 L 4 0 L -3.4 3.6 Z"
                        transform="translate(${x} ${y}) rotate(${r})"/>`).join(''),
-            /** NIBE designation in a pill, measured value beside it. */
-            tag: (key, code, x, y, hit) => `
-              <g class="tag" id="${v}_t_${key}" data-hit="${hit || ''}">
-                <rect x="${x}" y="${y}" width="37" height="17" rx="8.5"/>
-                <text class="tagtext" x="${x + 18.5}" y="${y + 12.3}" text-anchor="middle">${code}</text>
-                <text class="tagval" id="${v}_v_${key}" x="${x + 44}" y="${y + 13.5}">–</text>
+            /** A measuring point, named for what it measures: plain caption, live
+             *  value under it. Both are drawn with a background-coloured halo
+             *  (paint-order stroke) so a label may sit over a pipe or a tank wall
+             *  and still be read — which is what buys the freedom to put each
+             *  reading next to the thing it belongs to. */
+            label: (key, name, x, y, hit, anchor = 'start') => `
+              <g class="lbl" id="${v}_t_${key}" data-hit="${hit || ''}">
+                <text class="lname" x="${x}" y="${y}" text-anchor="${anchor}">${name}</text>
+                <text class="lval" id="${v}_v_${key}" x="${x}" y="${y + 17}"
+                      text-anchor="${anchor}">–</text>
               </g>`,
+            /** House in elevation: floor, two walls, and a roof overhanging them. */
+            house: (xL, xR, yEave, yBase, yApex) => `
+              <path class="house" d="M${xL} ${yBase} V${yEave} M${xR} ${yBase} V${yEave}
+                                     M${xL} ${yBase} H${xR}"/>
+              <path class="house" d="M${xL - 20} ${yEave} L${(xL + xR) / 2} ${yApex}
+                                     L${xR + 20} ${yEave}"/>`,
+            /** Heated floor slab. The loop inside it is the supply pipe itself. */
+            floor: (x, y, w, h) => `
+              <rect class="floorfill" id="${v}_floorfill" x="${x}" y="${y}"
+                    width="${w}" height="${h}" rx="3"/>
+              <rect class="slab" x="${x}" y="${y}" width="${w}" height="${h}" rx="3"/>`,
+            /** Hot water cylinder: an open-topped body with an elliptical rim, and
+             *  a fill whose colour is the water temperature. */
+            tank: (cx, halfW, yTop, yBot, ry) => {
+                const body = `M${cx - halfW} ${yTop} V${yBot}
+                              A${halfW} ${ry} 0 0 0 ${cx + halfW} ${yBot} V${yTop}`;
+                const closed = `${body} A${halfW} ${ry} 0 0 1 ${cx - halfW} ${yTop} Z`;
+                // Opaque shell first so nothing routed behind shows through, then
+                // the water tint, then the outline: a body filled with the card
+                // background would otherwise paint over its own fill.
+                return `
+              <path class="shell" d="${closed}"/>
+              <path class="tankfill" id="${v}_tankfill" d="${closed}"/>
+              <path class="tankline" d="${body}"/>
+              <ellipse class="vessel" cx="${cx}" cy="${yTop}" rx="${halfW}" ry="${ry}"/>`;
+            },
+            sun: (cx, cy, r) => {
+                const rays = [];
+                for (let i = 0; i < 8; i++) {
+                    const a = (i * Math.PI) / 4;
+                    const [dx, dy] = [Math.cos(a), Math.sin(a)];
+                    rays.push(`M${(cx + dx * (r + 3.5)).toFixed(1)} ${(cy + dy * (r + 3.5)).toFixed(1)}`
+                        + ` L${(cx + dx * (r + 7)).toFixed(1)} ${(cy + dy * (r + 7)).toFixed(1)}`);
+                }
+                return `<g class="sun"><circle cx="${cx}" cy="${cy}" r="${r}"/>
+                        <path d="${rays.join(' ')}"/></g>`;
+            },
             pump: (key, cx, cy) => `
               <g class="pumpsym hit" id="${v}_pump_${key}" data-hit="${key === 'brine' ? 'brine_pump' : 'supply_pump'}">
                 <circle cx="${cx}" cy="${cy}" r="9"/>
@@ -412,8 +471,11 @@ class NibepiFlowCard extends HTMLElement {
 
     _wideMarkup() {
         const t = this._t, k = this._kit('wide'), P = LAYOUTS.wide.pipes;
-        const fins = [872, 892, 912, 932, 952, 972].map(x => `M${x} 126 V206`).join(' ');
         return `
+      <!-- outside -->
+      ${k.sun(52, 60, 12)}
+      ${k.label('out', t.outdoor, 80, 54, 'outdoor')}
+
       <!-- ground and borehole -->
       <path class="ground" d="M18 252 H244"/>
       <path class="ground" d="${k.hatch(30, 240, 252, 19)}"/>
@@ -423,15 +485,15 @@ class NibepiFlowCard extends HTMLElement {
       ${k.flow('brine_flow')}${k.flow('brine_ret')}
       ${k.arrows('brine_flow', P.brine_flow.arrows)}
       ${k.arrows('brine_ret', P.brine_ret.arrows)}
-      ${k.tag('bt10', 'BT10', 86, 130, 'brine_in')}
-      ${k.tag('bt11', 'BT11', 140, 210, 'brine_out')}
+      ${k.label('gin', t.nGroundIn, 86, 126, 'brine_in')}
+      ${k.label('gout', t.nGroundOut, 140, 216, 'brine_out')}
       ${k.pump('brine', 178, 162)}
       <text class="pumplabel hit" id="wide_v_gp2" x="178" y="188"
-            text-anchor="middle" data-hit="brine_pump">GP2 –</text>
+            text-anchor="middle" data-hit="brine_pump">–</text>
 
       <!-- machine outline and refrigerant circuit -->
       <rect class="enclosure" x="252" y="96" width="350" height="290" rx="10"/>
-      <text class="desig" x="262" y="115">EB100 · EP14</text>
+      <text class="caption" x="262" y="115">${t.heatpump}</text>
       ${k.refrigerant()}
 
       <rect class="vessel" x="282" y="152" width="48" height="62" rx="3"/>
@@ -456,71 +518,82 @@ class NibepiFlowCard extends HTMLElement {
 
       <!-- heat medium -->
       ${k.pipe('hm_sup')}${k.flow('hm_sup')}${k.arrows('hm_sup', P.hm_sup.arrows)}
-      ${k.tag('bt2', 'BT2', 612, 128, 'supply')}
+      ${k.label('sup', t.supply, 612, 122, 'supply')}
       ${k.pump('hm', 640, 162)}
       <text class="pumplabel hit" id="wide_v_gp1" x="640" y="188"
-            text-anchor="middle" data-hit="supply_pump">GP1 –</text>
+            text-anchor="middle" data-hit="supply_pump">–</text>
 
       ${k.valve(712, 162, 13, {
             stems: '<path d="M699 162 H725 M712 162 V175"/>',
             heat: 'M718 158 L724.5 162 L718 166 Z',
             hw: 'M708 169 L712 175.5 L716 169 Z',
         })}
-      <text class="desig" x="740" y="152">QN10</text>
+
+      <!-- the house: the heating loop is the floor -->
+      ${k.house(826, 1006, 132, 256, 60)}
+      ${k.floor(838, 210, 156, 38)}
+      <text class="caption" x="994" y="202" text-anchor="end">${t.cHeating}</text>
 
       <g class="branch" id="wide_br_heating">
         ${k.pipe('heat_sup')}${k.pipe('heat_ret')}
         ${k.flow('heat_sup')}${k.flow('heat_ret')}
         ${k.arrows('heat_sup', P.heat_sup.arrows)}
         ${k.arrows('heat_ret', P.heat_ret.arrows)}
-        <rect class="vessel" x="852" y="116" width="138" height="100" rx="5"/>
-        <path class="hx" d="${fins}"/>
-        <text class="caption" x="921" y="236" text-anchor="middle">${t.cHeating}</text>
-        ${k.tag('bt50', 'BT50', 866, 246, 'room')}
       </g>
+
+      <!-- the hot water cylinder -->
+      ${k.tank(916, 64, 298, 448, 11)}
+      <text class="caption" x="916" y="276" text-anchor="middle">${t.cHotwater}</text>
 
       <g class="branch" id="wide_br_hotwater">
         ${k.pipe('hw_sup')}${k.pipe('hw_ret')}
         ${k.flow('hw_sup')}${k.flow('hw_ret')}
         ${k.arrows('hw_sup', P.hw_sup.arrows)}
         ${k.arrows('hw_ret', P.hw_ret.arrows)}
-        <text class="caption" x="921" y="286" text-anchor="middle">${t.cHotwater}</text>
-        <rect class="vessel" x="852" y="296" width="138" height="156" rx="16"/>
-        <path class="hx" d="${coilPath(872, 962, 344, 12, 6, false)}"/>
-        ${k.tag('bt7', 'BT7', 866, 306, 'hw_top')}
-        ${k.tag('bt6', 'BT6', 866, 420, 'hw_load')}
       </g>
 
-      ${k.tag('bt3', 'BT3', 640, 442, 'return')}`;
+      <!-- readings sit outside the branch groups: a temperature is still true
+           when the diverter is pointing the other way -->
+      ${k.label('room', t.room, 846, 168, 'room')}
+      ${k.label('tanktop', t.hw_top, 866, 322, 'hw_top')}
+      ${k.label('tanklow', t.nTankLow, 866, 416, 'hw_load')}
+      ${k.label('ret', t.return, 640, 442, 'return')}`;
     }
 
     _tallMarkup() {
         const t = this._t, k = this._kit('tall'), P = LAYOUTS.tall.pipes;
-        const fins = [76, 106, 136, 166, 196, 226].map(x => `M${x} 50 V110`).join(' ');
         return `
+      <!-- outside -->
+      ${k.sun(30, 46, 11)}
+      ${k.label('out', t.outdoor, 52, 40, 'outdoor')}
+
       <!-- consumers at the top: the house sits above the ground -->
+      ${k.house(54, 286, 106, 196, 32)}
+      ${k.floor(68, 150, 204, 38)}
+      <text class="caption" x="272" y="142" text-anchor="end">${t.cHeating}</text>
+
       <g class="branch" id="tall_br_heating">
         ${k.pipe('heat_sup')}${k.pipe('heat_ret')}
         ${k.flow('heat_sup')}${k.flow('heat_ret')}
         ${k.arrows('heat_sup', P.heat_sup.arrows)}
         ${k.arrows('heat_ret', P.heat_ret.arrows)}
-        <rect class="vessel" x="54" y="40" width="232" height="80" rx="5"/>
-        <path class="hx" d="${fins}"/>
-        <text class="caption" x="54" y="140">${t.cHeating}</text>
-        ${k.tag('bt50', 'BT50', 54, 150, 'room')}
       </g>
+
+      ${k.tank(170, 110, 250, 388, 12)}
+      <text class="caption" x="60" y="230">${t.cHotwater}</text>
 
       <g class="branch" id="tall_br_hotwater">
         ${k.pipe('hw_sup')}${k.pipe('hw_ret')}
         ${k.flow('hw_sup')}${k.flow('hw_ret')}
         ${k.arrows('hw_sup', P.hw_sup.arrows)}
         ${k.arrows('hw_ret', P.hw_ret.arrows)}
-        <text class="caption" x="54" y="188">${t.cHotwater}</text>
-        <rect class="vessel" x="54" y="196" width="232" height="172" rx="16"/>
-        <path class="hx" d="${coilPath(90, 250, 230, 12, 7)}"/>
-        ${k.tag('bt7', 'BT7', 72, 206, 'hw_top')}
-        ${k.tag('bt6', 'BT6', 72, 320, 'hw_load')}
       </g>
+
+      <!-- readings sit outside the branch groups: a temperature is still true
+           when the diverter is pointing the other way -->
+      ${k.label('room', t.room, 78, 124, 'room')}
+      ${k.label('tanktop', t.hw_top, 86, 272, 'hw_top')}
+      ${k.label('tanklow', t.nTankLow, 86, 364, 'hw_load')}
 
       <!-- diverter and heat medium trunk -->
       ${k.valve(310, 400, 12, {
@@ -528,18 +601,17 @@ class NibepiFlowCard extends HTMLElement {
             heat: 'M306 384 L310 377.5 L314 384 Z',
             hw: 'M302 396 L295.5 400 L302 404 Z',
         })}
-      <text class="desig" x="292" y="424" text-anchor="end">QN10</text>
 
       ${k.pipe('hm_sup')}${k.flow('hm_sup')}${k.arrows('hm_sup', P.hm_sup.arrows)}
-      ${k.tag('bt2', 'BT2', 150, 418, 'supply')}
-      ${k.tag('bt3', 'BT3', 44, 396, 'return')}
+      ${k.label('sup', t.supply, 190, 424, 'supply', 'end')}
+      ${k.label('ret', t.return, 44, 404, 'return')}
       ${k.pump('hm', 250, 440)}
-      <text class="pumplabel hit" id="tall_v_gp1" x="250" y="462"
-            text-anchor="middle" data-hit="supply_pump">GP1 –</text>
+      <text class="pumplabel hit" id="tall_v_gp1" x="250" y="459"
+            text-anchor="middle" data-hit="supply_pump">–</text>
 
       <!-- machine outline and refrigerant circuit -->
-      <rect class="enclosure" x="40" y="460" width="290" height="340" rx="10"/>
-      <text class="desig" x="48" y="476">EB100 · EP14</text>
+      <rect class="enclosure" x="40" y="468" width="290" height="332" rx="10"/>
+      <text class="caption" x="48" y="484">${t.heatpump}</text>
       ${k.refrigerant()}
 
       <rect class="vessel" x="150" y="482" width="80" height="36" rx="3"/>
@@ -568,13 +640,13 @@ class NibepiFlowCard extends HTMLElement {
       ${k.arrows('brine_flow', P.brine_flow.arrows)}
       ${k.arrows('brine_ret', P.brine_ret.arrows)}
       ${k.pump('brine', 180, 784)}
-      <text class="pumplabel hit" id="tall_v_gp2" x="194" y="788"
-            data-hit="brine_pump">GP2 –</text>
-      ${k.tag('bt10', 'BT10', 36, 806, 'brine_in')}
-      ${k.tag('bt11', 'BT11', 226, 806, 'brine_out')}
+      <text class="pumplabel hit" id="tall_v_gp2" x="196" y="788"
+            data-hit="brine_pump">–</text>
       <path class="ground" d="M30 830 H310"/>
       <path class="ground" d="${k.hatch(42, 306, 830, 19)}"/>
-      <text class="caption" x="234" y="874">${t.cGround}</text>`;
+      ${k.label('gin', t.nGroundIn, 30, 874, 'brine_in')}
+      ${k.label('gout', t.nGroundOut, 226, 874, 'brine_out')}
+      <text class="caption" x="30" y="944">${t.cGround}</text>`;
     }
 
     // ── DOM ──────────────────────────────────────────────────────────────────
@@ -691,19 +763,41 @@ class NibepiFlowCard extends HTMLElement {
         }
         .ground { fill:none; stroke:var(--secondary-text-color); stroke-width:1.4; opacity:.75; }
 
-        .caption {
-          fill:var(--secondary-text-color); font-size:10.5px;
-          text-transform:uppercase; letter-spacing:.09em;
+        /* Sentence case, no tracking: the drawing is a picture of the house, and
+           small-caps engineering captions were most of what made it read as a
+           datasheet. */
+        .caption { fill:var(--secondary-text-color); font-size:11px; }
+
+        .house {
+          fill:none; stroke:var(--primary-text-color); stroke-width:1.8;
+          stroke-linejoin:round; stroke-linecap:round;
         }
-        .desig { fill:var(--secondary-text-color); font-size:10.5px; letter-spacing:.06em; }
-        .tag rect { fill:var(--secondary-background-color); stroke:none; }
-        .tag { cursor:pointer; }
-        .tagtext { fill:var(--secondary-text-color); font-size:10.5px; letter-spacing:.04em; }
-        .tagval {
+        .slab { fill:none; stroke:var(--primary-text-color); stroke-width:1.4; }
+        .shell { fill:var(--card-background-color, var(--ha-card-background)); stroke:none; }
+        .tankline {
+          fill:none; stroke:var(--primary-text-color); stroke-width:1.8; stroke-linejoin:round;
+        }
+        /* Both fills are painted from a live temperature, so the floor warms and
+           the cylinder colours with the water in it. Kept faint: they are a
+           second reading of a number already printed beside them. */
+        .floorfill, .tankfill { stroke:none; fill:transparent; opacity:.17; }
+        .sun {
+          fill:none; stroke:var(--nb-sun, #e0a63c); stroke-width:1.6; stroke-linecap:round;
+        }
+
+        .lbl { cursor:pointer; }
+        /* Halo, so a reading or a caption may sit on top of a pipe, a tank wall
+           or the hatched ground and still be read. */
+        .caption, .pumplabel, .lname, .lval, .cprval, .cprstate {
+          paint-order:stroke; stroke:var(--card-background-color, var(--ha-card-background));
+          stroke-width:3.5px; stroke-linejoin:round;
+        }
+        .lname { fill:var(--secondary-text-color); font-size:11px; }
+        .lval {
           fill:var(--primary-text-color); font-size:17px; font-weight:500;
           font-variant-numeric:tabular-nums;
         }
-        .tag:hover .tagval { text-decoration:underline; }
+        .lbl:hover .lval { text-decoration:underline; }
 
         .pumpsym circle {
           fill:var(--card-background-color, var(--ha-card-background));
@@ -1033,22 +1127,33 @@ class NibepiFlowCard extends HTMLElement {
         const set = (id, text) => { const el = $(id); if (el) el.textContent = text; };
         const L = LAYOUTS[v];
 
-        // A sensor tag with nothing behind it — BT7 on an installation that only
-        // has BT6, say — is drawn as a permanent "–", so drop the whole pill.
-        const tag = (key, value) => {
+        // A measuring point with nothing behind it — the tank top on an
+        // installation that only has the charge sensor, say — would be a
+        // permanent "–", so drop the whole label.
+        const label = (key, value) => {
             const g = $(`${v}_t_${key}`);
             if (g) g.style.display = value === null ? 'none' : '';
             set(`${v}_v_${key}`, deg(value));
         };
-        tag('bt10', d.brineIn);
-        tag('bt11', d.brineOut);
-        tag('bt2', d.supply);
-        tag('bt3', d.ret);
-        tag('bt7', d.hwTop);
-        tag('bt6', d.hwLoad);
-        tag('bt50', d.room);
-        set(`${v}_v_gp2`, `GP2 ${pct(d.bpump)}`);
-        set(`${v}_v_gp1`, `GP1 ${pct(d.hpump)}`);
+        label('out', d.outdoor);
+        label('gin', d.brineIn);
+        label('gout', d.brineOut);
+        label('sup', d.supply);
+        label('ret', d.ret);
+        label('tanktop', d.hwTop);
+        label('tanklow', d.hwLoad);
+        label('room', d.room);
+        set(`${v}_v_gp2`, `${t.pumpGround} ${pct(d.bpump)}`);
+        set(`${v}_v_gp1`, `${t.pumpHeat} ${pct(d.hpump)}`);
+
+        // The water in the cylinder and the warmth in the floor, as colour. The
+        // tank falls back to the charge sensor where there is no top sensor.
+        const wash = (id, value) => {
+            const el = $(id);
+            if (el) el.style.fill = value === null ? 'transparent' : tempColor(value);
+        };
+        wash(`${v}_tankfill`, d.hwTop !== null ? d.hwTop : d.hwLoad);
+        wash(`${v}_floorfill`, d.known && !d.heating ? null : d.supply);
 
         set(`${v}_v_hz`, d.hz === null ? '–' : `${fmt(d.hz, 0)} Hz`);
         set(`${v}_v_cprstate`, d.cprState !== null
