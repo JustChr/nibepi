@@ -359,6 +359,8 @@ With **HA Discovery** enabled, every active register is automatically published 
 | Read/write, binary state map (0/1) | `switch` |
 | Read/write, multi-state map | `select` |
 
+Which row a register lands on is read from the model file, so a correction there can move it: a register whose description gains a `0=Off 1=On` state map stops being a `number` and becomes a `switch`. Since 1.7.1 the configs for the entity types a register is no longer published under are retracted when the new one goes out, and toggling a register off in the Register tab retracts all of them — so Home Assistant deletes the old entity instead of keeping it alongside the new one, frozen at its last reading.
+
 Discovery messages are published with `retain: true` and re-published automatically after MQTT broker restart.
 
 MQTT topics follow the pattern:
@@ -473,6 +475,10 @@ nc -zv <mqtt-host> 1883
 **Register values not appearing in Home Assistant**
 
 Make sure **HA Discovery** is enabled in the MQTT tab and the register is toggled on in the Register tab. Check Home Assistant → Settings → Devices & Services → MQTT.
+
+**A register has two entities, or an entity is stuck at the value it had months ago**
+
+A leftover from a NibePi before 1.7.1, which published a new discovery config without retracting the old one. Toggle the register off in the Register tab and on again: the removal now retracts every entity type the register could have been published under, and the next reading re-creates just the current one.
 
 ---
 

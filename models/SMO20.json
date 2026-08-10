@@ -309,7 +309,7 @@
 {"register":"48072","factor":"1","size":"s16","mode":"R/W","titel":"DM diff start add.","info":"The value below the last compressor step the degree minutes needed to be reached for the pump to start electric addition","unit":"","min":"0","max":"0"},
 {"register":"48074","factor":"10","size":"s16","mode":"R/W","titel":"Cool/Heat Sensor Set Point","info":"Set point for change between cooling and heating when using the cool/heat sensor","unit":"","min":"50","max":"400"},
 {"register":"48085","factor":"1","size":"s8","mode":"R/W","titel":"Heat medium pump manual speed","info":"Heat medium pump speed if manual","unit":"%","min":"1","max":"100"},
-{"register":"48130","factor":"1","size":"s8","mode":"R/W","titel":"Manual heat medium pump speed","info":"Manual heat medium pump speed?","unit":"%","min":"0","max":"1"},
+{"register":"48130","factor":"1","size":"s8","mode":"R/W","titel":"Manual heat medium pump speed","info":"Manual heat medium pump speed 0=Off 1=On","unit":"","min":"0","max":"1"},
 {"register":"48132","factor":"1","size":"s8","mode":"R/W","titel":"Temporary Lux","info":"0=Off, 1=3h, 2=6h, 3=12h, 4=One time increase","unit":"","min":"0","max":"0"},
 {"register":"48177","factor":"1","size":"s8","mode":"R/W","titel":"Min cooling supply temp S1","info":"Minimum allowed supply temperature during cooling","unit":"°C","min":"-5","max":"30"},
 {"register":"48181","factor":"1","size":"s8","mode":"R/W","titel":"Own Cooling Curve P3","info":"User defined cooling curve point","unit":"°C","min":"-5","max":"40"},

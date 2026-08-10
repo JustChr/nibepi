@@ -940,7 +940,7 @@
 {"register":"48092","factor":"10","size":"s16","mode":"R/W","titel":"Pool 1 stop temp.","info":"The Temperature at which the pool heating will stop","unit":"°C","min":"50","max":"800"},
 {"register":"48093","factor":"1","size":"u8","mode":"R/W","titel":"Pool 2 Activated","info":"Activates pool heating","unit":"","min":"0","max":"1"},
 {"register":"48094","factor":"1","size":"u8","mode":"R/W","titel":"Pool 1 Activated","info":"Activates pool heating","unit":"","min":"0","max":"1"},
-{"register":"48130","factor":"1","size":"s8","mode":"R/W","titel":"Manual heat medium pump speed","info":"Manual heat medium pump speed?","unit":"%","min":"0","max":"1"},
+{"register":"48130","factor":"1","size":"s8","mode":"R/W","titel":"Manual heat medium pump speed","info":"Manual heat medium pump speed 0=Off 1=On","unit":"","min":"0","max":"1"},
 {"register":"48132","factor":"1","size":"s8","mode":"R/W","titel":"Temporary Lux","info":"0=Off, 1=3h, 2=6h, 3=12h, 4=One time increase","unit":"","min":"0","max":"0"},
 {"register":"48133","factor":"1","size":"u8","mode":"R/W","titel":"Period Pool 2","info":"","unit":"min","min":"0","max":"180"},
 {"register":"48139","factor":"1","size":"s16","mode":"R/W","titel":"DM startdiff add. with shunt","info":"","unit":"","min":"0","max":"2000"},

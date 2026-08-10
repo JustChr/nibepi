@@ -519,6 +519,23 @@ function deviceBlock() {
     };
 }
 
+/** Every component a register can be published as. Which one it lands on is
+ *  derived from the model file, so a register can move between them — a corrected
+ *  `info` that now parses as "0=Off 1=On" turns a number into a switch. The old
+ *  config is retained on the broker, and HA keeps honouring it: without clearing
+ *  it the register would own two entities for good, the stale one stuck at
+ *  whatever it last read. */
+const HA_COMPONENTS = ['sensor', 'number', 'switch', 'select'];
+
+/** Retract the retained configs a register is no longer published under. An
+ *  empty payload is how HA is told an entity is gone; sending it to a topic that
+ *  was never used is a no-op. */
+function clearStaleDiscovery(address, keep) {
+    for (const c of HA_COMPONENTS) {
+        if (c !== keep) publishMqtt(`homeassistant/${c}/${address}/config`, '', true);
+    }
+}
+
 function publishDiscovery(reg) {
     if (!mqttClient || !mqttConnected) return;
     const address  = Number(reg.register);
@@ -588,7 +605,11 @@ function publishDiscovery(reg) {
     // Strip undefined fields
     for (const k of Object.keys(payload)) { if (payload[k] === undefined) delete payload[k]; }
 
+    // The live config first, then the retraction of the others: the new entity
+    // exists before the old one goes, so a register that changes component never
+    // disappears from a dashboard even momentarily.
     publishMqtt(`homeassistant/${component}/${address}/config`, JSON.stringify(payload), true);
+    clearStaleDiscovery(address, component);
     mqttDiscovered.add(address);
     log('info', `Discovery: ${component} ${address} (${reg.titel})`);
 }
@@ -781,6 +802,11 @@ const server = http.createServer(async (req, res) => {
             config.registers = (config.registers || []).filter(r => Number(r) !== n);
             scheduleConfigSave();
             removeRegular(n);
+            // Nothing polls it now, so its entity would sit in HA at the last
+            // value it happened to read. Retract every component it could have
+            // been published under and let HA remove it.
+            clearStaleDiscovery(n, null);
+            mqttDiscovered.delete(n);
             respond(res, 200, { ok: true });
 
         } else if (pathname === '/api/register/set' && req.method === 'POST') {
