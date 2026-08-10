@@ -17,26 +17,25 @@ energy meters the Energy dashboard accepts.
 
 `nibepi-flow-card` draws the installation as a picture of the house rather than
 a page from the wiring manual, rendered in Home Assistant's visual language:
-flat surfaces, HA colour tokens, tabular numerals, restrained motion. Five
+flat surfaces, HA colour tokens, tabular numerals, restrained motion. Four
 layers, top to bottom:
 
 1. **Summary row** — heat output, electrical input, live COP, COP today.
 2. **The schematic** — sun and outside temperature, borehole below a hatched
    ground line, the machine drawn as a cabinet with the refrigerant circuit
    inside it, the diverter, a house whose floor is the heating loop, and a hot
-   water cylinder. Drawn twice: landscape for a wide card, portrait for a phone
-   (see below).
-3. **The two controls** — house target temperature, hot water comfort mode and
-   a one-off hot water boost (see below).
-4. **House heat demand** — the degree minute register, reframed (see below).
-5. **Grouped detail rows** — eight groups covering the heating circuit, hot
+   water cylinder. The two controls stand inside it: the house target in the
+   house, the hot water boost on the tank (see below). Drawn twice: landscape
+   for a wide card, portrait for a phone (see below).
+3. **House heat demand** — the degree minute register, reframed (see below).
+4. **Grouped detail rows** — eight groups covering the heating circuit, hot
    water, ground loop, compressor, immersion heater, electrical, energy and
    control signals.
 
 It is a picture of the installation, not a page of designations:
 
 - **Everything is named for what it is.** "From ground", "To ground", "Supply",
-  "Return", "Room", "Tank top", "Tank bottom", "Heating pump", "Ground pump" —
+  "Return", "Room", "Tank top", "Hot water", "Heating pump", "Ground pump" —
   each with its live value under it. The NIBE designations are still one tap
   away: every reading opens its own more-info dialog, and the detail rows below
   carry the entity names. A measuring point with no entity behind it is removed
@@ -97,23 +96,32 @@ What is live:
 ### The two controls
 
 Everything else on the card is a reading. Two things are worth changing from the
-same screen you are looking at, so they are the only two the card can write:
+same screen you are looking at, so they are the only two the card can write —
+and they are drawn **inside the schematic**, standing where they act:
 
-| Tile | Writes | Notes |
-|---|---|---|
-| **House target** | `room_set` (`number.set_value`) | Steppers of one `step` from the entity's own attributes, clamped to its `min`/`max`. The set point also appears in the drawing beside the room reading, as `→ 21.5 °C`. |
-| **House warmth** | `curve_offset` (`number.set_value`) | What the tile becomes when `use_room_sensor` is **off** — the pump ignores the room set point entirely in that state, so offering it would be a lie. Labelled with a hint saying why. |
-| **Hot water** | `hw_mode` (`select.select_option`) | One pill per option the entity actually offers — Economy, Normal, Luxury, Smart Control — so nothing is hard-coded. |
-| **Extra hot water** | `hw_temporary` (`select.select_option`) | A single toggle: on picks the "one time increase" option, off picks the first one. The active state also replaces the comfort mode in the tank caption. |
+| Control | Where | Writes | Notes |
+|---|---|---|---|
+| **House target** | in the house, beside the room reading | `room_set` (`number.set_value`) | A `−` / value / `+` stepper of one `step` from the entity's own attributes, clamped to its `min`/`max`. A button at a limit dims and stops responding. |
+| **House warmth** | same place | `curve_offset` (`number.set_value`) | What the stepper becomes when `use_room_sensor` is **off** — the pump ignores the room set point entirely in that state, so offering it would be a lie. The caption changes with it, and the value is a signed offset rather than a temperature. |
+| **Extra hot water** | on the cylinder | `hw_temporary` (`select.select_option`) | A single pill: on picks the "one time increase" option, off picks the first one. It turns orange while a boost runs, and the tank caption names the option that is running. |
 
-Two details make it feel like a switch rather than a form:
+The **hot water comfort mode** is shown — in the tank caption and in the detail
+rows — but is not settable here. It is a setting rather than something reached
+for, and it belongs on a settings screen; the dashboard's Warmwasser view has it.
+
+Three details make it feel like a switch rather than a form:
 
 - **A write in flight wins for 15 seconds.** NibePi writes the register and only
   reads it back on the next poll, so an optimistic value is held over the round
   trip. Without it the number snaps back under your finger and three quick taps
   on `+` produce one step instead of three.
-- **The tiles disappear** when their entities are not configured, like every
-  other part of the card. `controls: false` drops the row entirely.
+- **They are plain SVG**, not HTML in a `foreignObject`, so they scale with the
+  drawing instead of keeping card-level pixel sizes and going out of proportion
+  the moment the sheet is scaled. The boost pill's box is sized from its rendered
+  label, so a translated word still gets a box that fits it.
+- **They disappear** when their entities are not configured, like every other
+  part of the card. `controls: false` takes away everything that writes and
+  leaves the readings — including the target value — in place.
 
 ### Two geometries, no squashing
 
@@ -207,8 +215,8 @@ Config is a flat entity map — see the `custom:nibepi-flow-card` block in
 `dashboard.yaml`. Every key is optional: anything you leave out, or whose
 register is not enabled, is left out of the drawing, and its summary chip, detail
 row or whole group hides itself. `details: false` drops the grouped rows and
-keeps the diagram, summary, controls and demand meter; `controls: false` drops
-the two control tiles and leaves the card read-only.
+keeps the diagram, summary and demand meter; `controls: false` takes the stepper
+buttons and the boost pill out of the drawing and leaves the card read-only.
 
 Set `language: de` or `language: en`; the card ships with both label sets,
 including `Prio`, compressor state and every detail row label.
@@ -239,7 +247,7 @@ marked **required** are the ones without which whole cards stay empty.
 | Register | Title | Why |
 |---|---|---|
 | **40072** | BF1 EP14 Flow | **Required** — no flow, no heat output, no COP |
-| 40017 | EB100-EP14-BT12 Condensor Out | Recommended — the condenser outlet proper, upstream of QN10 and of any external mixing, so heat output is the same measurement whichever way the diverter points. Heat output falls back to BT2 without it, which measures fine in both modes |
+| 40017 | EB100-EP14-BT12 Condensor Out | Optional, and **not on every model** — where the sensor exists it is the condenser outlet proper, upstream of QN10 and of any external mixing, so heat output is the same measurement whichever way the diverter points. Heat output falls back to BT2 without it, which measures fine in both modes. The dashboard does not show it; only the heat output template reads it, and only if it has a value |
 | **43084** | Int. el.add. Power | **Required** — immersion heater share of input power |
 | **43427** | Compressor State EP14 | **Required** — stopped / starting / running / stopping |
 | **43086** | Prio | **Required** — drives the card's active-branch highlight |
@@ -294,7 +302,7 @@ cp nibepi-card.js /config/www/nibepi-card.js
 
 Register it under **Settings → Dashboards → ⋮ → Resources → Add resource**:
 
-- URL `/local/nibepi-card.js?v=3.4.0`
+- URL `/local/nibepi-card.js?v=3.5.0`
 - Type **JavaScript module**
 
 **Keep the `?v=` and bump it on every update.** Home Assistant serves `/local/`
@@ -303,18 +311,18 @@ loaded the card once will not go back for a new one, no matter what you copy ove
 the file on disk. Changing the query string is what actually invalidates it; a
 normal reload will not.
 
-The console should log `NIBEPI-FLOW-CARD v3.4.0` on load. If it reports an older
+The console should log `NIBEPI-FLOW-CARD v3.5.0` on load. If it reports an older
 version, the browser is serving a cached copy and nothing else you change will
 have any effect. Two ways to check what is really running:
 
 ```js
-customElements.get('nibepi-flow-card').version     // -> "3.4.0"
+customElements.get('nibepi-flow-card').version     // -> "3.5.0"
 ```
 
 and the card logs its own layout decision whenever it changes:
 
 ```
-NIBEPI-FLOW-CARD v3.4.0: card 1532px -> landscape (layout: auto, wide_at: 900)
+NIBEPI-FLOW-CARD v3.5.0: card 1532px -> landscape (layout: auto, wide_at: 900)
 ```
 
 That line distinguishes the two reasons the schematic can come out portrait — a

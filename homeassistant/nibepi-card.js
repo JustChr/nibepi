@@ -9,11 +9,12 @@
  * "Room" — not for its NIBE sensor tag; the designations live in the detail rows
  * and the more-info dialogs, which is where someone who wants BT6 will look.
  *
- * Nearly all of it is read-only. The exceptions are the two settings worth
- * changing from the same screen: the house target temperature and the hot water
- * comfort mode, plus a one-off hot water boost. They write through HA's number
- * and select services, and hold their value optimistically over the register
- * round trip — see _renderControls.
+ * Nearly all of it is read-only. The exceptions are drawn where they act: the
+ * house target temperature stands in the house, and the hot water boost stands
+ * on the cylinder. They write through HA's number and select services, and hold
+ * their value optimistically over the register round trip — see _paintControls.
+ * The hot water comfort mode is shown but not settable here; it is a setting
+ * rather than something reached for, and it belongs on a settings screen.
  *
  * The schematic exists in two hand-drawn geometries rather than one that
  * squashes: LANDSCAPE for a wide card, and PORTRAIT — same circuit, same labels,
@@ -30,7 +31,7 @@
  *     node homeassistant/gen-alarms.js
  */
 
-const CARD_VERSION = '3.4.0';
+const CARD_VERSION = '3.5.0';
 
 // Card content width, in px, at which the landscape sheet takes over. The
 // landscape drawing is 1040 units wide, so below this it renders at under ~0.87×
@@ -57,9 +58,8 @@ const LABELS = {
         cCond: 'Heat to water',
         cHeating: 'Floor heating', cHotwater: 'Hot water',
         pumpHeat: 'Heating pump', pumpGround: 'Ground pump',
-        nGroundIn: 'From ground', nGroundOut: 'To ground', nTankLow: 'Tank bottom',
-        ctlHouse: 'House target', ctlOffset: 'House warmth',
-        ctlOffsetHint: 'heat curve — no room sensor', ctlBoost: 'Extra hot water',
+        nGroundIn: 'From ground', nGroundOut: 'To ground', nTankWater: 'Hot water',
+        nTarget: 'Target', nWarmth: 'Warmth', ctlBoost: 'Extra',
         sHeat: 'Heat output', sPower: 'Electrical input', sCop: 'COP', sCopToday: 'COP today',
         demand: 'House heat demand', demandUnit: 'DM',
         demandStart: 'Compressor starts at {n} DM',
@@ -97,9 +97,8 @@ const LABELS = {
         cCond: 'Wärme ins Wasser',
         cHeating: 'Fußbodenheizung', cHotwater: 'Warmwasser',
         pumpHeat: 'Heizungspumpe', pumpGround: 'Solepumpe',
-        nGroundIn: 'Vom Boden', nGroundOut: 'Zum Boden', nTankLow: 'Speicher unten',
-        ctlHouse: 'Zieltemperatur Haus', ctlOffset: 'Wärme im Haus',
-        ctlOffsetHint: 'Heizkurve — kein Raumfühler', ctlBoost: 'Extra Warmwasser',
+        nGroundIn: 'Vom Boden', nGroundOut: 'Zum Boden', nTankWater: 'Warmwassertemperatur',
+        nTarget: 'Ziel', nWarmth: 'Wärme', ctlBoost: 'Extra',
         sHeat: 'Wärmeleistung', sPower: 'Stromaufnahme', sCop: 'COP', sCopToday: 'COP heute',
         demand: 'Wärmebedarf des Hauses', demandUnit: 'GM',
         demandStart: 'Verdichter startet bei {n} GM',
@@ -344,7 +343,6 @@ class NibepiFlowCard extends HTMLElement {
         this._built = false;
         this._sig = null;
         this._pend = {};
-        this._modeSig = null;
         if (this.shadowRoot) this.shadowRoot.innerHTML = '';
     }
 
@@ -355,8 +353,7 @@ class NibepiFlowCard extends HTMLElement {
     }
 
     getCardSize() {
-        const c = this._cfg || {};
-        return (c.details === false ? 9 : 15) + (c.controls === false ? 0 : 2);
+        return (this._cfg || {}).details === false ? 9 : 15;
     }
 
     // ── data helpers ─────────────────────────────────────────────────────────
@@ -412,13 +409,10 @@ class NibepiFlowCard extends HTMLElement {
         const sensor = this._obj('use_room_sensor');
         const roomOn = !sensor || sensor.state !== 'off';
         if (this._e.room_set && roomOn) {
-            return { key: 'room_set', label: t.ctlHouse, unit: '°C', digits: 1, step: 0.5 };
+            return { key: 'room_set', cap: t.nTarget, unit: '°C', digits: 1, step: 0.5 };
         }
         if (this._e.curve_offset) {
-            return {
-                key: 'curve_offset', label: t.ctlOffset, unit: '', digits: 0, step: 1,
-                signed: true, hint: this._e.room_set ? t.ctlOffsetHint : '',
-            };
+            return { key: 'curve_offset', cap: t.nWarmth, unit: '', digits: 0, step: 1, signed: true };
         }
         return null;
     }
@@ -498,55 +492,52 @@ class NibepiFlowCard extends HTMLElement {
         return this._selOpts('hw_mode') ? this._ctlState('hw_mode') : null;
     }
 
-    _renderControls() {
+    /** Size a drawn pill around the text it now holds. getComputedTextLength is
+     *  the honest measurement, but it reads 0 on the sheet that is currently
+     *  display:none — so a rough estimate stands in until that sheet is shown
+     *  and _fit repaints it. */
+    _sizeBtn(v, key, text) {
+        const box = this.$(`${v}_btnbox_${key}`), el = this.$(`${v}_btntxt_${key}`);
+        if (!box || !el) return;
+        el.textContent = text;
+        let w = 0;
+        try { w = el.getComputedTextLength(); } catch (e) { /* not rendered */ }
+        if (!w) w = text.length * 6.1;
+        const cx = Number(el.getAttribute('x'));
+        box.setAttribute('x', String(cx - w / 2 - 11));
+        box.setAttribute('width', String(w + 22));
+    }
+
+    /** The two controls, painted into one geometry. */
+    _paintControls(v) {
         const $ = this.$, t = this._t;
-        if (this._cfg.controls === false) return;
 
         const c = this._houseCtl();
-        $('c_house').classList.toggle('hidden', !c);
+        $(`${v}_ctl_house`).classList.toggle('hidden', !c);
         if (c) {
             const s = this._obj(c.key);
-            const v = parseFloat(this._ctlState(c.key));
+            const n = parseFloat(this._ctlState(c.key));
             const a = (s && s.attributes) || {};
-            $('c_house_label').textContent = c.label;
-            $('c_house_hint').textContent = c.hint || '';
-            $('c_house_val').innerHTML = Number.isNaN(v)
+            $(`${v}_ctl_cap`).textContent = c.cap;
+            $(`${v}_ctl_val`).textContent = Number.isNaN(n)
                 ? '–'
-                : `${c.signed && v > 0 ? '+' : ''}${v.toFixed(c.digits)}`
-                  + `${c.unit ? `<small>${c.unit}</small>` : ''}`;
-            $('c_house_dn').disabled = !s || (a.min !== undefined && v <= Number(a.min));
-            $('c_house_up').disabled = !s || (a.max !== undefined && v >= Number(a.max));
+                : `${c.signed && n > 0 ? '+' : ''}${n.toFixed(c.digits)}${c.unit ? ` ${c.unit}` : ''}`;
+            $(`${v}_ctl_dn`).classList.toggle('off',
+                !s || (a.min !== undefined && n <= Number(a.min)));
+            $(`${v}_ctl_up`).classList.toggle('off',
+                !s || (a.max !== undefined && n >= Number(a.max)));
         }
 
-        const modes = this._selOpts('hw_mode');
+        // Only the boost lives on the tank. The comfort mode is a setting, not a
+        // thing you reach for, and it reads out in the tank caption anyway.
         const lux = this._selOpts('hw_temporary');
-        $('c_hw').classList.toggle('hidden', !modes && !lux);
-
-        const sig = JSON.stringify(modes);
-        if (sig !== this._modeSig) {
-            this._modeSig = sig;
-            $('c_hw_modes').innerHTML = (modes || []).map(o =>
-                `<button class="pillbtn" type="button" data-opt="${esc(o)}">${esc(o)}</button>`)
-                .join('');
-        }
-        if (modes) {
-            const cur = this._ctlState('hw_mode');
-            for (const b of $('c_hw_modes').querySelectorAll('.pillbtn')) {
-                b.classList.toggle('on', b.dataset.opt === cur);
-            }
-        }
-
-        const boost = $('c_hw_boost');
-        boost.classList.toggle('hidden', !lux);
+        const btn = $(`${v}_btn_boost`);
+        btn.classList.toggle('hidden', !lux);
         if (lux) {
             const cur = this._ctlState('hw_temporary');
-            const on = !!cur && cur !== this._luxOff(lux);
-            boost.classList.toggle('on', on);
-            boost.textContent = on ? `${t.ctlBoost} · ${cur}` : t.ctlBoost;
+            btn.classList.toggle('on', !!cur && cur !== this._luxOff(lux));
+            this._sizeBtn(v, 'boost', t.ctlBoost);
         }
-
-        $('controls').classList.toggle('hidden',
-            $('c_house').classList.contains('hidden') && $('c_hw').classList.contains('hidden'));
     }
 
     // ── schematic markup ─────────────────────────────────────────────────────
@@ -646,6 +637,35 @@ class NibepiFlowCard extends HTMLElement {
                 return `<g class="sun"><circle cx="${cx}" cy="${cy}" r="${r}"/>
                         <path d="${rays.join(' ')}"/></g>`;
             },
+            /** House target stepper, drawn inside the house: two round buttons
+             *  either side of the value they set, captioned above. It replaces
+             *  the "→ 21.0 °C" hint that used to sit beside the room reading —
+             *  same information, now touchable, and in the room it applies to. */
+            stepper: (cxDn, cxVal, cxUp, cy, r, capY) => `
+              <g class="ctlgrp" id="${v}_ctl_house">
+                <text class="ctlcap" id="${v}_ctl_cap" x="${cxVal}" y="${capY}"
+                      text-anchor="middle"></text>
+                <g class="stepbtn" id="${v}_ctl_dn" data-ctl="house_dn">
+                  <circle cx="${cxDn}" cy="${cy}" r="${r}"/>
+                  <path d="M${cxDn - 5.5} ${cy} H${cxDn + 5.5}"/>
+                </g>
+                <text class="ctlval" id="${v}_ctl_val" x="${cxVal}" y="${cy + 5}"
+                      text-anchor="middle">–</text>
+                <g class="stepbtn" id="${v}_ctl_up" data-ctl="house_up">
+                  <circle cx="${cxUp}" cy="${cy}" r="${r}"/>
+                  <path d="M${cxUp - 5.5} ${cy} H${cxUp + 5.5} M${cxUp} ${cy - 5.5} V${cy + 5.5}"/>
+                </g>
+              </g>`,
+            /** Pill button. The box is sized from the rendered text at paint
+             *  time rather than guessed here, so a translated label still gets
+             *  a box that fits it — see _sizeBtn. */
+            button: (key, cx, cy, h = 18) => `
+              <g class="svgbtn" id="${v}_btn_${key}" data-ctl="${key}">
+                <rect id="${v}_btnbox_${key}" x="${cx}" y="${cy - h / 2}"
+                      width="0" height="${h}" rx="${h / 2}"/>
+                <text id="${v}_btntxt_${key}" x="${cx}" y="${cy + 4}"
+                      text-anchor="middle"></text>
+              </g>`,
             pump: (key, cx, cy) => `
               <g class="pumpsym hit" id="${v}_pump_${key}" data-hit="${key === 'brine' ? 'brine_pump' : 'supply_pump'}">
                 <circle cx="${cx}" cy="${cy}" r="9"/>
@@ -733,9 +753,11 @@ class NibepiFlowCard extends HTMLElement {
         })}
 
       <!-- the house: the heating loop is the floor -->
+      <!-- the name goes in the gable: the storey below it holds the room
+           reading and the target stepper, and there is no third line of room -->
       ${k.house(826, 1006, 132, 256, 60)}
       ${k.floor(838, 210, 156, 38)}
-      <text class="caption" x="994" y="202" text-anchor="end">${t.cHeating}</text>
+      <text class="caption" x="916" y="118" text-anchor="middle">${t.cHeating}</text>
 
       <g class="branch" id="wide_br_heating">
         ${k.pipe('heat_sup')}${k.pipe('heat_ret')}
@@ -744,10 +766,13 @@ class NibepiFlowCard extends HTMLElement {
         ${k.arrows('heat_ret', P.heat_ret.arrows)}
       </g>
 
-      <!-- the hot water cylinder -->
+      <!-- the hot water cylinder, with its one control standing on the lid. The
+           name is set beside the tank rather than over it: the strip between the
+           house floor and the tank rim holds one line, and the button has it -->
       ${k.tank(916, 64, 298, 448, 11)}
-      <text class="caption" id="wide_v_hwcap" x="916" y="276"
-            text-anchor="middle">${t.cHotwater}</text>
+      <text class="caption" id="wide_v_hwcap" x="846" y="384"
+            text-anchor="end">${t.cHotwater}</text>
+      ${k.button('boost', 916, 272)}
 
       <g class="branch" id="wide_br_hotwater">
         ${k.pipe('hw_sup')}${k.pipe('hw_ret')}
@@ -758,10 +783,10 @@ class NibepiFlowCard extends HTMLElement {
 
       <!-- readings sit outside the branch groups: a temperature is still true
            when the diverter is pointing the other way -->
-      ${k.label('room', t.room, 846, 168, 'room')}
-      <text class="ltgt" id="wide_v_roomtgt" x="908" y="185"></text>
+      ${k.label('room', t.room, 836, 152, 'room')}
+      ${k.stepper(886, 936, 986, 192, 13, 174)}
       ${k.label('tanktop', t.hw_top, 866, 322, 'hw_top')}
-      ${k.label('tanklow', t.nTankLow, 866, 416, 'hw_load')}
+      ${k.label('tanklow', t.nTankWater, 866, 416, 'hw_load')}
       ${k.label('ret', t.return, 640, 442, 'return')}`;
     }
 
@@ -788,6 +813,9 @@ class NibepiFlowCard extends HTMLElement {
 
       ${k.tank(170, 110, 250, 388, 12)}
       <text class="caption" id="tall_v_hwcap" x="60" y="230">${t.cHotwater}</text>
+      <!-- the tank is wide on this sheet, so its control sits inside it, in the
+           air above the water and clear of the coil -->
+      ${k.button('boost', 220, 278)}
 
       <g class="branch" id="tall_br_hotwater">
         ${k.pipe('hw_sup')}${k.pipe('hw_ret')}
@@ -799,9 +827,9 @@ class NibepiFlowCard extends HTMLElement {
       <!-- readings sit outside the branch groups: a temperature is still true
            when the diverter is pointing the other way -->
       ${k.label('room', t.room, 78, 124, 'room')}
-      <text class="ltgt" id="tall_v_roomtgt" x="142" y="141"></text>
+      ${k.stepper(173, 213, 253, 137, 12, 118)}
       ${k.label('tanktop', t.hw_top, 86, 272, 'hw_top')}
-      ${k.label('tanklow', t.nTankLow, 86, 364, 'hw_load')}
+      ${k.label('tanklow', t.nTankWater, 86, 364, 'hw_load')}
 
       <!-- diverter and heat medium trunk -->
       ${k.valve(310, 400, 12, {
@@ -1008,7 +1036,7 @@ class NibepiFlowCard extends HTMLElement {
         .lbl { cursor:pointer; }
         /* Halo, so a reading or a caption may sit on top of a pipe, a tank wall
            or the hatched ground and still be read. */
-        .caption, .pumplabel, .lname, .lval, .cprval, .ltgt {
+        .caption, .pumplabel, .lname, .lval, .cprval, .ctlcap, .ctlval {
           paint-order:stroke; stroke:var(--card-background-color, var(--ha-card-background));
           stroke-width:3.5px; stroke-linejoin:round;
         }
@@ -1018,9 +1046,6 @@ class NibepiFlowCard extends HTMLElement {
           font-variant-numeric:tabular-nums;
         }
         .lbl:hover .lval { text-decoration:underline; }
-        /* The set point, beside the reading it is aiming at. */
-        .ltgt { fill:var(--secondary-text-color); font-size:12px;
-                font-variant-numeric:tabular-nums; }
 
         .pumpsym circle {
           fill:var(--card-background-color, var(--ha-card-background));
@@ -1051,52 +1076,43 @@ class NibepiFlowCard extends HTMLElement {
         .branch.dim { opacity:.3; }
         .hit { cursor:pointer; }
 
-        /* ── the two things worth setting from here ─────────────────────── */
-        /* Flex rather than a grid of equal columns: the hot water tile carries a
-           row of options and should take the slack, while the stepper needs no
-           more room than the number it sets. Both still wrap on a phone. */
-        .controls { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:16px; }
-        .controls.hidden, .ctl.hidden { display:none; }
-        .ctl {
-          background:var(--secondary-background-color); border-radius:12px;
-          padding:10px 12px 12px;
+        /* ── the two things worth setting, drawn into the picture ───────── */
+        /* They live in the schematic rather than under it: the house target
+           belongs in the house and the hot water boost belongs on the tank, and
+           a control standing where its effect is needs no label explaining what
+           it acts on. Both are plain SVG, so they scale with the drawing — no
+           foreignObject, whose HTML would keep the card's px sizes and go out of
+           proportion the moment the sheet is scaled. */
+        .ctlgrp.hidden, .svgbtn.hidden { display:none; }
+        .ctlcap { fill:var(--secondary-text-color); font-size:11px; }
+        .ctlval {
+          fill:var(--primary-text-color); font-size:14px; font-weight:500;
+          font-variant-numeric:tabular-nums;
         }
-        .ctl.house { flex:0 1 auto; min-width:210px; }
-        .ctl.hw { flex:1 1 320px; }
-        .clabel {
-          display:flex; align-items:baseline; gap:8px; margin-bottom:8px;
-          font-size:.68rem; text-transform:uppercase; letter-spacing:.06em;
-          color:var(--secondary-text-color);
+        .stepbtn { cursor:pointer; }
+        /* A hairline outline as well as the fill: on themes where the secondary
+           background sits a shade off the card there is otherwise nothing to say
+           these are buttons. */
+        .stepbtn circle {
+          fill:var(--secondary-background-color); stroke:var(--divider-color); stroke-width:1;
         }
-        .chint { text-transform:none; letter-spacing:0; opacity:.8; font-size:.66rem; }
-        .cbody { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
-        /* Round steppers, sized for a thumb: this is the one part of the card
-           that is touched rather than read. */
-        .step {
-          appearance:none; border:none; cursor:pointer; font:inherit;
-          width:38px; height:38px; border-radius:19px; flex:none;
-          background:var(--card-background-color, var(--ha-card-background));
-          color:var(--primary-text-color); font-size:1.25rem; line-height:1;
+        .stepbtn path {
+          fill:none; stroke:var(--primary-text-color); stroke-width:2; stroke-linecap:round;
         }
-        .step:hover { background:var(--divider-color); }
-        .step:active { transform:scale(.94); }
-        .step:disabled { opacity:.35; cursor:default; }
-        .step:focus-visible, .pillbtn:focus-visible { outline:2px solid var(--primary-color); outline-offset:2px; }
-        .cval {
-          min-width:84px; text-align:center; font-size:1.35rem; font-weight:500;
-          color:var(--primary-text-color); font-variant-numeric:tabular-nums;
+        .stepbtn:hover circle { fill:var(--divider-color); }
+        .stepbtn.off { pointer-events:none; }
+        .stepbtn.off circle, .stepbtn.off path { opacity:.35; }
+        .svgbtn { cursor:pointer; }
+        .svgbtn rect {
+          fill:var(--secondary-background-color); stroke:var(--divider-color); stroke-width:1;
         }
-        .cval small { font-size:.6em; font-weight:400; color:var(--secondary-text-color); margin-left:2px; }
-        .pillbtn {
-          appearance:none; border:none; cursor:pointer; font:inherit;
-          padding:8px 12px; border-radius:16px; font-size:.8rem;
-          background:var(--card-background-color, var(--ha-card-background));
-          color:var(--secondary-text-color);
-        }
-        .pillbtn:hover { background:var(--divider-color); }
-        .pillbtn.on { background:var(--primary-color); color:#fff; }
-        .pillbtn.boost { margin-top:8px; }
-        .pillbtn.boost.on { background:#c9622a; }
+        .svgbtn text { fill:var(--secondary-text-color); font-size:11px; }
+        .svgbtn:hover rect { fill:var(--divider-color); }
+        .svgbtn.on rect { fill:#c9622a; stroke:none; }
+        .svgbtn.on text { fill:#fff; }
+        /* controls: false leaves the readings and the target value in place and
+           takes away only the things that write. */
+        .readonly .stepbtn, .readonly .svgbtn { display:none; }
 
         /* ── heat demand meter ──────────────────────────────────────────── */
         .demand {
@@ -1189,25 +1205,6 @@ class NibepiFlowCard extends HTMLElement {
                >${this._tallMarkup()}</svg>
         </div>
 
-        <div class="controls" id="controls">
-          <div class="ctl house" id="c_house">
-            <div class="clabel">
-              <span id="c_house_label">${t.ctlHouse}</span>
-              <span class="chint" id="c_house_hint"></span>
-            </div>
-            <div class="cbody">
-              <button class="step" id="c_house_dn" type="button" aria-label="−">−</button>
-              <span class="cval" id="c_house_val">–</span>
-              <button class="step" id="c_house_up" type="button" aria-label="+">+</button>
-            </div>
-          </div>
-          <div class="ctl hw" id="c_hw">
-            <div class="clabel"><span>${t.cHotwater}</span></div>
-            <div class="cbody" id="c_hw_modes"></div>
-            <button class="pillbtn boost hidden" id="c_hw_boost" type="button">${t.ctlBoost}</button>
-          </div>
-        </div>
-
         <div class="demand" id="demand">
           <div class="drow">
             <span class="dlabel">${t.demand}</span>
@@ -1235,8 +1232,19 @@ class NibepiFlowCard extends HTMLElement {
 
         if (this._cfg.details === false) this.$('groups').style.display = 'none';
 
-        // one delegated listener for every more-info target
+        // One delegated listener for both kinds of target. Controls are checked
+        // first: they sit inside the drawing, and a stepper in the house is also
+        // inside the room label's neighbourhood — a write must not also open a
+        // more-info dialog on the way past.
         this.shadowRoot.addEventListener('click', ev => {
+            const ctl = ev.target.closest('[data-ctl]');
+            if (ctl) {
+                ev.stopPropagation();
+                if (ctl.dataset.ctl === 'house_dn') this._nudge(-1);
+                else if (ctl.dataset.ctl === 'house_up') this._nudge(1);
+                else if (ctl.dataset.ctl === 'boost') this._boost();
+                return;
+            }
             const el = ev.target.closest('[data-hit]');
             if (el && el.dataset.hit) this._more(this._e[el.dataset.hit]);
         });
@@ -1247,16 +1255,9 @@ class NibepiFlowCard extends HTMLElement {
             if (el) el.addEventListener('click', () => this._more(this._e[key]));
         }
 
-        if (this._cfg.controls === false) this.$('controls').style.display = 'none';
-        this.$('c_house_dn').addEventListener('click', () => this._nudge(-1));
-        this.$('c_house_up').addEventListener('click', () => this._nudge(1));
-        this.$('c_hw_boost').addEventListener('click', () => this._boost());
-        this.$('c_hw_modes').addEventListener('click', ev => {
-            const b = ev.target.closest('.pillbtn');
-            if (b && b.dataset.opt) {
-                this._write('hw_mode', b.dataset.opt, 'select', 'select_option', 'option');
-            }
-        });
+        if (this._cfg.controls === false) {
+            this.shadowRoot.querySelector('ha-card').classList.add('readonly');
+        }
 
         this._measure();
         this._built = true;
@@ -1285,8 +1286,14 @@ class NibepiFlowCard extends HTMLElement {
         const forced = this._cfg.layout;
         const wideAt = Number(this._cfg.wide_at) || WIDE_AT;
         const wide = forced === 'wide' || (forced !== 'tall' && w >= wideAt);
+        const flipped = w > 0 && wide !== this._wasWide;
         card.classList.toggle('wide', wide);
         card.classList.toggle('narrow', w > 0 && w < NARROW_AT);
+
+        // A drawn pill is sized from its rendered text, and text on a
+        // display:none sheet measures 0 — so the sheet that just came on screen
+        // has to be painted again now that it can be measured.
+        if (flipped && this._built && this._hass) { this._sig = null; this._update(); }
 
         // Announce the decision once per change. Whether the card came out
         // portrait because it is genuinely narrow or because a stale copy of
@@ -1370,8 +1377,6 @@ class NibepiFlowCard extends HTMLElement {
 
         // both geometries are painted; CSS decides which one is on screen
         for (const v of VARIANTS) this._paintVariant(v, d, deg, pct);
-
-        this._renderControls();
 
         // ── house heat demand, from the degree minute register ───────────────
         const dm = n('degree_minutes');
@@ -1465,9 +1470,7 @@ class NibepiFlowCard extends HTMLElement {
         // what the two consumers have been told to aim at
         const hw = this._hwLabel();
         set(`${v}_v_hwcap`, hw ? `${t.cHotwater} · ${hw}` : t.cHotwater);
-        const ctl = this._houseCtl();
-        const tgt = ctl && ctl.key === 'room_set' ? parseFloat(this._ctlState('room_set')) : NaN;
-        set(`${v}_v_roomtgt`, Number.isNaN(tgt) || d.room === null ? '' : `→ ${tgt.toFixed(1)} °C`);
+        this._paintControls(v);
 
         const ring = $(`${v}_ring`);
         const r = Number(ring.getAttribute('r'));
