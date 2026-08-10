@@ -3,11 +3,17 @@
  * Part of the NibePi project (https://github.com/JustChr/nibepi) · MIT
  *
  * A picture of the installation rather than a wiring diagram: the borehole below
- * a hatched ground line, the machine outline with its refrigerant circuit, a
- * house whose floor is the heating loop, and a hot water cylinder. Every
- * measuring point is named for what it is — "From ground", "Tank top", "Room" —
- * not for its NIBE sensor tag; the designations live in the detail rows and the
- * more-info dialogs, which is where someone who wants BT6 will look.
+ * a hatched ground line, the machine as a cabinet with its refrigerant circuit
+ * inside, a house whose floor is the heating loop, and a hot water cylinder.
+ * Every measuring point is named for what it is — "From ground", "Tank top",
+ * "Room" — not for its NIBE sensor tag; the designations live in the detail rows
+ * and the more-info dialogs, which is where someone who wants BT6 will look.
+ *
+ * Nearly all of it is read-only. The exceptions are the two settings worth
+ * changing from the same screen: the house target temperature and the hot water
+ * comfort mode, plus a one-off hot water boost. They write through HA's number
+ * and select services, and hold their value optimistically over the register
+ * round trip — see _renderControls.
  *
  * The schematic exists in two hand-drawn geometries rather than one that
  * squashes: LANDSCAPE for a wide card, and PORTRAIT — same circuit, same labels,
@@ -24,7 +30,7 @@
  *     node homeassistant/gen-alarms.js
  */
 
-const CARD_VERSION = '3.3.0';
+const CARD_VERSION = '3.4.0';
 
 // Card content width, in px, at which the landscape sheet takes over. The
 // landscape drawing is 1040 units wide, so below this it renders at under ~0.87×
@@ -48,10 +54,12 @@ const LABELS = {
     en: {
         heatpump: 'Heat pump', outdoor: 'Outside', avg: 'avg', idle: 'Idle', alarm: 'Alarm',
         cGround: 'Ground loop', cEvap: 'Heat from ground', cCompressor: 'Compressor',
-        cCond: 'Heat to water', cValve: 'Pressure drop', cValveShort: 'Pressure drop',
+        cCond: 'Heat to water',
         cHeating: 'Floor heating', cHotwater: 'Hot water',
         pumpHeat: 'Heating pump', pumpGround: 'Ground pump',
         nGroundIn: 'From ground', nGroundOut: 'To ground', nTankLow: 'Tank bottom',
+        ctlHouse: 'House target', ctlOffset: 'House warmth',
+        ctlOffsetHint: 'heat curve — no room sensor', ctlBoost: 'Extra hot water',
         sHeat: 'Heat output', sPower: 'Electrical input', sCop: 'COP', sCopToday: 'COP today',
         demand: 'House heat demand', demandUnit: 'DM',
         demandStart: 'Compressor starts at {n} DM',
@@ -86,10 +94,12 @@ const LABELS = {
     de: {
         heatpump: 'Wärmepumpe', outdoor: 'Außen', avg: 'Mittel', idle: 'Bereitschaft', alarm: 'Alarm',
         cGround: 'Erdsonde', cEvap: 'Wärme aus dem Boden', cCompressor: 'Verdichter',
-        cCond: 'Wärme ins Wasser', cValve: 'Entspannung', cValveShort: 'Entspannung',
+        cCond: 'Wärme ins Wasser',
         cHeating: 'Fußbodenheizung', cHotwater: 'Warmwasser',
         pumpHeat: 'Heizungspumpe', pumpGround: 'Solepumpe',
         nGroundIn: 'Vom Boden', nGroundOut: 'Zum Boden', nTankLow: 'Speicher unten',
+        ctlHouse: 'Zieltemperatur Haus', ctlOffset: 'Wärme im Haus',
+        ctlOffsetHint: 'Heizkurve — kein Raumfühler', ctlBoost: 'Extra Warmwasser',
         sHeat: 'Wärmeleistung', sPower: 'Stromaufnahme', sCop: 'COP', sCopToday: 'COP heute',
         demand: 'Wärmebedarf des Hauses', demandUnit: 'GM',
         demandStart: 'Verdichter startet bei {n} GM',
@@ -200,11 +210,15 @@ const LAYOUTS = {
                 arrows: [[812, 444, 90]], branch: 'hotwater',
             },
         },
+        // The refrigerant runs counter-clockwise around a rounded loop with the
+        // compressor sitting at the bottom, where it sits in the real machine:
+        // out of the cold exchanger, down and along to the compressor, up the
+        // far side into the hot exchanger, and back across the top.
         refrigerant: [
-            { id: 'ref1', d: 'M306 152 V134 H401', arrows: [[368, 134, 0]] },
-            { id: 'ref2', d: 'M453 134 H548 V152', arrows: [[502, 134, 0]] },
-            { id: 'ref3', d: 'M548 214 V320 H443', arrows: [[548, 278, 90]] },
-            { id: 'ref4', d: 'M411 320 H306 V214', arrows: [[360, 320, 180]] },
+            { id: 'ref1', d: 'M306 214 V304 A16 16 0 0 0 322 320 H395', arrows: [[306, 268, 90]] },
+            { id: 'ref2', d: 'M459 320 H532 A16 16 0 0 0 548 304 V214', arrows: [[548, 268, -90]] },
+            { id: 'ref3', d: 'M548 152 V148 A16 16 0 0 0 532 132 H427', arrows: [[478, 132, 180]] },
+            { id: 'ref4', d: 'M427 132 H322 A16 16 0 0 0 306 148 V152', arrows: [[376, 132, 180]] },
         ],
     },
 
@@ -244,10 +258,10 @@ const LAYOUTS = {
             },
         },
         refrigerant: [
-            { id: 'ref1', d: 'M74 748 H286', arrows: [[254, 748, 0]] },
-            { id: 'ref2', d: 'M286 748 V500', arrows: [[286, 700, -90]] },
-            { id: 'ref3', d: 'M286 500 H74', arrows: [[110, 500, 180]] },
-            { id: 'ref4', d: 'M74 500 V748', arrows: [[74, 560, 90]] },
+            { id: 'ref1', d: 'M230 748 H270 A16 16 0 0 0 286 732 V656', arrows: [[286, 700, -90]] },
+            { id: 'ref2', d: 'M286 592 V516 A16 16 0 0 0 270 500 H230', arrows: [[286, 552, -90]] },
+            { id: 'ref3', d: 'M150 500 H90 A16 16 0 0 0 74 516 V732', arrows: [[74, 620, 90]] },
+            { id: 'ref4', d: 'M74 732 A16 16 0 0 0 90 748 H150', arrows: [[122, 748, 0]] },
         ],
     },
 };
@@ -300,6 +314,7 @@ class NibepiFlowCard extends HTMLElement {
         this.attachShadow({ mode: 'open' });
         this._built = false;
         this._sig = null;
+        this._pend = {};        // control writes still in flight
     }
 
     static getStubConfig() {
@@ -319,12 +334,17 @@ class NibepiFlowCard extends HTMLElement {
             throw new Error('nibepi-flow-card: an "entities" map is required');
         }
         this._cfg = Object.assign(
-            { language: 'en', title: '', details: true, layout: 'auto', wide_at: WIDE_AT },
+            {
+                language: 'en', title: '', details: true, controls: true,
+                layout: 'auto', wide_at: WIDE_AT,
+            },
             config);
         this._e = config.entities;
         this._t = LABELS[this._cfg.language] || LABELS.en;
         this._built = false;
         this._sig = null;
+        this._pend = {};
+        this._modeSig = null;
         if (this.shadowRoot) this.shadowRoot.innerHTML = '';
     }
 
@@ -334,7 +354,10 @@ class NibepiFlowCard extends HTMLElement {
         this._update();
     }
 
-    getCardSize() { return this._cfg && this._cfg.details === false ? 9 : 15; }
+    getCardSize() {
+        const c = this._cfg || {};
+        return (c.details === false ? 9 : 15) + (c.controls === false ? 0 : 2);
+    }
 
     // ── data helpers ─────────────────────────────────────────────────────────
     _obj(key) {
@@ -377,6 +400,153 @@ class NibepiFlowCard extends HTMLElement {
         this.dispatchEvent(new CustomEvent('hass-more-info', {
             detail: { entityId }, bubbles: true, composed: true,
         }));
+    }
+
+    // ── controls ─────────────────────────────────────────────────────────────
+    /** Which knob the house tile drives. The room set point is the honest one
+     *  when a room sensor is actually in the loop; with the sensor switched off
+     *  the pump ignores that register completely, so the tile falls back to the
+     *  curve offset — the control that does change how warm the house gets. */
+    _houseCtl() {
+        const t = this._t;
+        const sensor = this._obj('use_room_sensor');
+        const roomOn = !sensor || sensor.state !== 'off';
+        if (this._e.room_set && roomOn) {
+            return { key: 'room_set', label: t.ctlHouse, unit: '°C', digits: 1, step: 0.5 };
+        }
+        if (this._e.curve_offset) {
+            return {
+                key: 'curve_offset', label: t.ctlOffset, unit: '', digits: 0, step: 1,
+                signed: true, hint: this._e.room_set ? t.ctlOffsetHint : '',
+            };
+        }
+        return null;
+    }
+
+    /** State, but a write in flight wins for a few seconds. NibePi writes the
+     *  register and only reads it back on the next poll, so without this the
+     *  value snaps back under the user's finger and the next tap starts from
+     *  the old number. */
+    _ctlState(key) {
+        const live = this._obj(key);
+        const s = live ? live.state : null;
+        const p = this._pend[key];
+        if (!p) return s;
+        const a = parseFloat(p.v), b = parseFloat(s);
+        const settled = (!Number.isNaN(a) && !Number.isNaN(b))
+            ? Math.abs(a - b) < 1e-6
+            : String(p.v) === String(s);
+        if (settled || Date.now() - p.t > 15000) { delete this._pend[key]; return s; }
+        return p.v;
+    }
+
+    _write(key, value, domain, service, field) {
+        const id = this._e[key];
+        if (!id || !this._hass || !this._hass.callService) return;
+        this._pend[key] = { v: value, t: Date.now() };
+        this._hass.callService(domain, service, { entity_id: id, [field]: value });
+        this._sig = null;                 // the pending value has to reach the DOM now
+        this._update();
+    }
+
+    _selOpts(key) {
+        const s = this._obj(key);
+        const o = s && s.attributes && s.attributes.options;
+        return Array.isArray(o) && o.length ? o : null;
+    }
+
+    _nudge(dir) {
+        const c = this._houseCtl();
+        if (!c) return;
+        const s = this._obj(c.key);
+        if (!s) return;
+        const a = s.attributes || {};
+        const step = Number(a.step) || c.step;
+        const lo = a.min === undefined ? -Infinity : Number(a.min);
+        const hi = a.max === undefined ? Infinity : Number(a.max);
+        const cur = parseFloat(this._ctlState(c.key));
+        if (Number.isNaN(cur)) return;
+        const next = clamp(Math.round((cur + dir * step) / step) * step, lo, hi);
+        if (Math.abs(next - cur) < 1e-6) return;
+        this._write(c.key, Number(next.toFixed(3)), 'number', 'set_value', 'value');
+    }
+
+    /** Off is the first option on both NIBE selects. The boost is whatever the
+     *  register calls a one-time increase, falling back to the last entry —
+     *  the longest run — so an unfamiliar translation still does something
+     *  sensible rather than nothing. */
+    _luxOff(opts) { return opts.find(o => /^(off|aus)$/i.test(o)) || opts[0]; }
+
+    _boost() {
+        const opts = this._selOpts('hw_temporary');
+        if (!opts) return;
+        const off = this._luxOff(opts);
+        const on = opts.find(o => /one\s*time|einmal/i.test(o)) || opts[opts.length - 1];
+        const cur = this._ctlState('hw_temporary');
+        this._write('hw_temporary', cur && cur !== off ? off : on,
+            'select', 'select_option', 'option');
+    }
+
+    /** The tank caption says what the hot water is currently being told to do:
+     *  the comfort mode normally, the temporary boost while one is running. */
+    _hwLabel() {
+        const lux = this._selOpts('hw_temporary');
+        if (lux) {
+            const cur = this._ctlState('hw_temporary');
+            if (cur && cur !== this._luxOff(lux)) return cur;
+        }
+        return this._selOpts('hw_mode') ? this._ctlState('hw_mode') : null;
+    }
+
+    _renderControls() {
+        const $ = this.$, t = this._t;
+        if (this._cfg.controls === false) return;
+
+        const c = this._houseCtl();
+        $('c_house').classList.toggle('hidden', !c);
+        if (c) {
+            const s = this._obj(c.key);
+            const v = parseFloat(this._ctlState(c.key));
+            const a = (s && s.attributes) || {};
+            $('c_house_label').textContent = c.label;
+            $('c_house_hint').textContent = c.hint || '';
+            $('c_house_val').innerHTML = Number.isNaN(v)
+                ? '–'
+                : `${c.signed && v > 0 ? '+' : ''}${v.toFixed(c.digits)}`
+                  + `${c.unit ? `<small>${c.unit}</small>` : ''}`;
+            $('c_house_dn').disabled = !s || (a.min !== undefined && v <= Number(a.min));
+            $('c_house_up').disabled = !s || (a.max !== undefined && v >= Number(a.max));
+        }
+
+        const modes = this._selOpts('hw_mode');
+        const lux = this._selOpts('hw_temporary');
+        $('c_hw').classList.toggle('hidden', !modes && !lux);
+
+        const sig = JSON.stringify(modes);
+        if (sig !== this._modeSig) {
+            this._modeSig = sig;
+            $('c_hw_modes').innerHTML = (modes || []).map(o =>
+                `<button class="pillbtn" type="button" data-opt="${esc(o)}">${esc(o)}</button>`)
+                .join('');
+        }
+        if (modes) {
+            const cur = this._ctlState('hw_mode');
+            for (const b of $('c_hw_modes').querySelectorAll('.pillbtn')) {
+                b.classList.toggle('on', b.dataset.opt === cur);
+            }
+        }
+
+        const boost = $('c_hw_boost');
+        boost.classList.toggle('hidden', !lux);
+        if (lux) {
+            const cur = this._ctlState('hw_temporary');
+            const on = !!cur && cur !== this._luxOff(lux);
+            boost.classList.toggle('on', on);
+            boost.textContent = on ? `${t.ctlBoost} · ${cur}` : t.ctlBoost;
+        }
+
+        $('controls').classList.toggle('hidden',
+            $('c_house').classList.contains('hidden') && $('c_hw').classList.contains('hidden'));
     }
 
     // ── schematic markup ─────────────────────────────────────────────────────
@@ -425,6 +595,45 @@ class NibepiFlowCard extends HTMLElement {
               <path class="tankfill" id="${v}_tankfill" d="${closed}"/>
               <path class="tankline" d="${body}"/>
               <ellipse class="vessel" cx="${cx}" cy="${yTop}" rx="${halfW}" ry="${ry}"/>`;
+            },
+            /** The machine as an appliance: a cabinet with feet, a control panel
+             *  with a little display, and a status lamp. Drawn unfilled, so the
+             *  internals read as a cutaway rather than as a block diagram. */
+            cabinet: (x, y, w, h, panel, screen) => `
+              <rect class="cabinet" x="${x}" y="${y}" width="${w}" height="${h}" rx="14"/>
+              <path class="cabinet foot" d="M${x + 24} ${y + h} v9 M${x + w - 24} ${y + h} v9"/>
+              ${panel ? `<path class="panelline" d="M${x} ${panel} H${x + w}"/>` : ''}
+              <rect class="screen" x="${screen[0]}" y="${screen[1]}"
+                    width="${screen[2]}" height="${screen[3]}" rx="5"/>
+              <text class="screentext" id="${v}_v_cprstate"
+                    x="${screen[0] + screen[2] / 2}" y="${screen[1] + screen[3] / 2 + 4}"
+                    text-anchor="middle"></text>
+              <circle class="lamp" id="${v}_lamp" cx="${screen[0] - 11}"
+                      cy="${screen[1] + screen[3] / 2}" r="3.4"/>`,
+            /** Heat exchanger: a block with water running through it. Two waves
+             *  say "something flows through here and changes temperature"
+             *  without anyone having to know what a plate exchanger looks like. */
+            exchanger: (x, y, w, h) => {
+                const seg = (w - 10) / 3;
+                const wave = yy => `M${x + 5} ${yy} q${seg / 2} -6 ${seg} 0 t${seg} 0 t${seg} 0`;
+                return `
+              <rect class="vessel" x="${x}" y="${y}" width="${w}" height="${h}" rx="6"/>
+              <path class="wave" d="${wave(y + h * 0.36)} ${wave(y + h * 0.68)}"/>`;
+            },
+            /** Compressor: a scroll, drawn as a spiral of half turns with a
+             *  growing radius. It reads as a moving part rather than as the
+             *  bar-and-wedge glyph from the hydraulic standard. */
+            spiral: (cx, cy, r0, r1, halves) => {
+                const step = (r1 - r0) / halves;
+                let r = r0, side = -1;
+                let d = `M${(cx + side * r).toFixed(1)} ${cy}`;
+                for (let i = 0; i < halves; i++) {
+                    const rn = r + step;
+                    d += ` A${((r + rn) / 2).toFixed(1)} ${((r + rn) / 2).toFixed(1)} 0 0 1`
+                        + ` ${(cx - side * rn).toFixed(1)} ${cy}`;
+                    r = rn; side = -side;
+                }
+                return `<path class="scroll" d="${d}"/>`;
             },
             sun: (cx, cy, r) => {
                 const rays = [];
@@ -491,30 +700,24 @@ class NibepiFlowCard extends HTMLElement {
       <text class="pumplabel hit" id="wide_v_gp2" x="178" y="188"
             text-anchor="middle" data-hit="brine_pump">–</text>
 
-      <!-- machine outline and refrigerant circuit -->
-      <rect class="enclosure" x="252" y="96" width="350" height="290" rx="10"/>
-      <text class="caption" x="262" y="115">${t.heatpump}</text>
+      <!-- the machine itself -->
+      ${k.cabinet(252, 84, 350, 320, 116, [468, 90, 120, 22])}
+      <text class="caption" x="266" y="110">${t.heatpump}</text>
       ${k.refrigerant()}
 
-      <rect class="vessel" x="282" y="152" width="48" height="62" rx="3"/>
-      <path class="hx" d="M282 214 L330 152"/>
+      ${k.exchanger(282, 152, 48, 62)}
       <text class="caption" x="306" y="232" text-anchor="middle">${t.cEvap}</text>
 
-      <rect class="vessel" x="524" y="152" width="48" height="62" rx="3"/>
-      <path class="hx" d="M524 214 L572 152"/>
+      ${k.exchanger(524, 152, 48, 62)}
       <text class="caption" x="548" y="232" text-anchor="middle">${t.cCond}</text>
 
       <g class="hit" data-hit="compressor_hz">
-        ${k.ring(427, 134, 33)}
-        <circle class="vessel" cx="427" cy="134" r="24"/>
-        <path class="hx" d="M414 122 V146 M419 123 V145 L438 134 Z"/>
-        <text class="cprval" id="wide_v_hz" x="427" y="192" text-anchor="middle">–</text>
-        <text class="cprstate" id="wide_v_cprstate" x="427" y="208" text-anchor="middle"></text>
-        <text class="caption" x="427" y="228" text-anchor="middle">${t.cCompressor}</text>
+        ${k.ring(427, 320, 32)}
+        <circle class="vessel" cx="427" cy="320" r="24"/>
+        ${k.spiral(427, 320, 3.5, 15, 5)}
+        <text class="cprval" id="wide_v_hz" x="427" y="374" text-anchor="middle">–</text>
+        <text class="caption" x="427" y="392" text-anchor="middle">${t.cCompressor}</text>
       </g>
-
-      <g class="valve"><path d="M411 310 V330 L427 320 Z M443 310 V330 L427 320 Z"/></g>
-      <text class="caption" x="427" y="348" text-anchor="middle">${t.cValve}</text>
 
       <!-- heat medium -->
       ${k.pipe('hm_sup')}${k.flow('hm_sup')}${k.arrows('hm_sup', P.hm_sup.arrows)}
@@ -543,7 +746,8 @@ class NibepiFlowCard extends HTMLElement {
 
       <!-- the hot water cylinder -->
       ${k.tank(916, 64, 298, 448, 11)}
-      <text class="caption" x="916" y="276" text-anchor="middle">${t.cHotwater}</text>
+      <text class="caption" id="wide_v_hwcap" x="916" y="276"
+            text-anchor="middle">${t.cHotwater}</text>
 
       <g class="branch" id="wide_br_hotwater">
         ${k.pipe('hw_sup')}${k.pipe('hw_ret')}
@@ -555,6 +759,7 @@ class NibepiFlowCard extends HTMLElement {
       <!-- readings sit outside the branch groups: a temperature is still true
            when the diverter is pointing the other way -->
       ${k.label('room', t.room, 846, 168, 'room')}
+      <text class="ltgt" id="wide_v_roomtgt" x="908" y="185"></text>
       ${k.label('tanktop', t.hw_top, 866, 322, 'hw_top')}
       ${k.label('tanklow', t.nTankLow, 866, 416, 'hw_load')}
       ${k.label('ret', t.return, 640, 442, 'return')}`;
@@ -570,7 +775,9 @@ class NibepiFlowCard extends HTMLElement {
       <!-- consumers at the top: the house sits above the ground -->
       ${k.house(54, 286, 106, 196, 32)}
       ${k.floor(68, 150, 204, 38)}
-      <text class="caption" x="272" y="142" text-anchor="end">${t.cHeating}</text>
+      <!-- the caption sits below the house here: the portrait storey is 44 units
+           tall and the room reading and its set point already fill it -->
+      <text class="caption" x="272" y="214" text-anchor="end">${t.cHeating}</text>
 
       <g class="branch" id="tall_br_heating">
         ${k.pipe('heat_sup')}${k.pipe('heat_ret')}
@@ -580,7 +787,7 @@ class NibepiFlowCard extends HTMLElement {
       </g>
 
       ${k.tank(170, 110, 250, 388, 12)}
-      <text class="caption" x="60" y="230">${t.cHotwater}</text>
+      <text class="caption" id="tall_v_hwcap" x="60" y="230">${t.cHotwater}</text>
 
       <g class="branch" id="tall_br_hotwater">
         ${k.pipe('hw_sup')}${k.pipe('hw_ret')}
@@ -592,6 +799,7 @@ class NibepiFlowCard extends HTMLElement {
       <!-- readings sit outside the branch groups: a temperature is still true
            when the diverter is pointing the other way -->
       ${k.label('room', t.room, 78, 124, 'room')}
+      <text class="ltgt" id="tall_v_roomtgt" x="142" y="141"></text>
       ${k.label('tanktop', t.hw_top, 86, 272, 'hw_top')}
       ${k.label('tanklow', t.nTankLow, 86, 364, 'hw_load')}
 
@@ -609,30 +817,26 @@ class NibepiFlowCard extends HTMLElement {
       <text class="pumplabel hit" id="tall_v_gp1" x="250" y="459"
             text-anchor="middle" data-hit="supply_pump">–</text>
 
-      <!-- machine outline and refrigerant circuit -->
-      <rect class="enclosure" x="40" y="468" width="290" height="332" rx="10"/>
-      <text class="caption" x="48" y="484">${t.heatpump}</text>
+      <!-- the machine itself -->
+      <!-- no name caption on this sheet: the cabinet, its display and the
+           compressor caption inside it leave nowhere to put one that does not
+           land on the circuit -->
+      ${k.cabinet(40, 462, 290, 350, 0, [60, 476, 84, 22])}
       ${k.refrigerant()}
 
-      <rect class="vessel" x="150" y="482" width="80" height="36" rx="3"/>
-      <path class="hx" d="M150 518 L230 482"/>
+      ${k.exchanger(150, 482, 80, 36)}
       <text class="caption" x="190" y="538" text-anchor="middle">${t.cCond}</text>
 
-      <rect class="vessel" x="150" y="730" width="80" height="36" rx="3"/>
-      <path class="hx" d="M150 766 L230 730"/>
+      ${k.exchanger(150, 730, 80, 36)}
       <text class="caption" x="190" y="722" text-anchor="middle">${t.cEvap}</text>
 
       <g class="hit" data-hit="compressor_hz">
         ${k.ring(286, 624, 30)}
         <circle class="vessel" cx="286" cy="624" r="21"/>
-        <path class="hx" d="M275 614 V634 M279 615 V633 L295 624 Z"/>
-        <text class="cprval" id="tall_v_hz" x="240" y="618" text-anchor="end">–</text>
-        <text class="cprstate" id="tall_v_cprstate" x="240" y="636" text-anchor="end"></text>
-        <text class="caption" x="240" y="654" text-anchor="end">${t.cCompressor}</text>
+        ${k.spiral(286, 624, 3, 13, 5)}
+        <text class="cprval" id="tall_v_hz" x="240" y="624" text-anchor="end">–</text>
+        <text class="caption" x="240" y="642" text-anchor="end">${t.cCompressor}</text>
       </g>
-
-      <g class="valve"><path d="M60 614 V634 L74 624 Z M88 614 V634 L74 624 Z"/></g>
-      <text class="caption" x="96" y="600">${t.cValveShort}</text>
 
       <!-- ground and borehole at the bottom -->
       ${k.pipe('brine_flow')}${k.pipe('brine_ret')}
@@ -757,9 +961,25 @@ class NibepiFlowCard extends HTMLElement {
           fill:var(--card-background-color, var(--ha-card-background));
           stroke:var(--primary-text-color); stroke-width:1.8; stroke-linejoin:round;
         }
-        .hx { fill:none; stroke:var(--primary-text-color); stroke-width:1.6; }
-        .enclosure {
-          fill:none; stroke:var(--divider-color); stroke-width:1.4; stroke-dasharray:7 5;
+        /* ── the machine, as an appliance ───────────────────────────────── */
+        /* An unfilled cabinet: the drawing is a cutaway, so the compressor and
+           the circuit stay visible inside a box that still reads as a box. */
+        .cabinet {
+          fill:none; stroke:var(--secondary-text-color); stroke-width:1.6;
+          stroke-linejoin:round; opacity:.85;
+        }
+        .cabinet.foot { stroke-linecap:round; }
+        .panelline { fill:none; stroke:var(--secondary-text-color); stroke-width:1; opacity:.5; }
+        .screen { fill:var(--secondary-background-color); stroke:none; }
+        .screentext { fill:var(--secondary-text-color); font-size:11px; }
+        .lamp { fill:var(--divider-color); stroke:none; }
+        .lamp.on { fill:var(--primary-color); }
+        .wave {
+          fill:none; stroke:var(--primary-text-color); stroke-width:1.4;
+          stroke-linecap:round; opacity:.8;
+        }
+        .scroll {
+          fill:none; stroke:var(--primary-text-color); stroke-width:1.5; stroke-linecap:round;
         }
         .ground { fill:none; stroke:var(--secondary-text-color); stroke-width:1.4; opacity:.75; }
 
@@ -788,7 +1008,7 @@ class NibepiFlowCard extends HTMLElement {
         .lbl { cursor:pointer; }
         /* Halo, so a reading or a caption may sit on top of a pipe, a tank wall
            or the hatched ground and still be read. */
-        .caption, .pumplabel, .lname, .lval, .cprval, .cprstate {
+        .caption, .pumplabel, .lname, .lval, .cprval, .ltgt {
           paint-order:stroke; stroke:var(--card-background-color, var(--ha-card-background));
           stroke-width:3.5px; stroke-linejoin:round;
         }
@@ -798,6 +1018,9 @@ class NibepiFlowCard extends HTMLElement {
           font-variant-numeric:tabular-nums;
         }
         .lbl:hover .lval { text-decoration:underline; }
+        /* The set point, beside the reading it is aiming at. */
+        .ltgt { fill:var(--secondary-text-color); font-size:12px;
+                font-variant-numeric:tabular-nums; }
 
         .pumpsym circle {
           fill:var(--card-background-color, var(--ha-card-background));
@@ -819,7 +1042,6 @@ class NibepiFlowCard extends HTMLElement {
           fill:var(--primary-text-color); font-size:19px; font-weight:500;
           font-variant-numeric:tabular-nums;
         }
-        .cprstate { fill:var(--secondary-text-color); font-size:11px; }
         .ring-bg { fill:none; stroke:var(--divider-color); stroke-width:3.4; }
         .ring-fg {
           fill:none; stroke:var(--primary-color); stroke-width:3.4; stroke-linecap:round;
@@ -828,6 +1050,53 @@ class NibepiFlowCard extends HTMLElement {
         .branch { transition:opacity .25s ease; }
         .branch.dim { opacity:.3; }
         .hit { cursor:pointer; }
+
+        /* ── the two things worth setting from here ─────────────────────── */
+        /* Flex rather than a grid of equal columns: the hot water tile carries a
+           row of options and should take the slack, while the stepper needs no
+           more room than the number it sets. Both still wrap on a phone. */
+        .controls { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:16px; }
+        .controls.hidden, .ctl.hidden { display:none; }
+        .ctl {
+          background:var(--secondary-background-color); border-radius:12px;
+          padding:10px 12px 12px;
+        }
+        .ctl.house { flex:0 1 auto; min-width:210px; }
+        .ctl.hw { flex:1 1 320px; }
+        .clabel {
+          display:flex; align-items:baseline; gap:8px; margin-bottom:8px;
+          font-size:.68rem; text-transform:uppercase; letter-spacing:.06em;
+          color:var(--secondary-text-color);
+        }
+        .chint { text-transform:none; letter-spacing:0; opacity:.8; font-size:.66rem; }
+        .cbody { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+        /* Round steppers, sized for a thumb: this is the one part of the card
+           that is touched rather than read. */
+        .step {
+          appearance:none; border:none; cursor:pointer; font:inherit;
+          width:38px; height:38px; border-radius:19px; flex:none;
+          background:var(--card-background-color, var(--ha-card-background));
+          color:var(--primary-text-color); font-size:1.25rem; line-height:1;
+        }
+        .step:hover { background:var(--divider-color); }
+        .step:active { transform:scale(.94); }
+        .step:disabled { opacity:.35; cursor:default; }
+        .step:focus-visible, .pillbtn:focus-visible { outline:2px solid var(--primary-color); outline-offset:2px; }
+        .cval {
+          min-width:84px; text-align:center; font-size:1.35rem; font-weight:500;
+          color:var(--primary-text-color); font-variant-numeric:tabular-nums;
+        }
+        .cval small { font-size:.6em; font-weight:400; color:var(--secondary-text-color); margin-left:2px; }
+        .pillbtn {
+          appearance:none; border:none; cursor:pointer; font:inherit;
+          padding:8px 12px; border-radius:16px; font-size:.8rem;
+          background:var(--card-background-color, var(--ha-card-background));
+          color:var(--secondary-text-color);
+        }
+        .pillbtn:hover { background:var(--divider-color); }
+        .pillbtn.on { background:var(--primary-color); color:#fff; }
+        .pillbtn.boost { margin-top:8px; }
+        .pillbtn.boost.on { background:#c9622a; }
 
         /* ── heat demand meter ──────────────────────────────────────────── */
         .demand {
@@ -920,6 +1189,25 @@ class NibepiFlowCard extends HTMLElement {
                >${this._tallMarkup()}</svg>
         </div>
 
+        <div class="controls" id="controls">
+          <div class="ctl house" id="c_house">
+            <div class="clabel">
+              <span id="c_house_label">${t.ctlHouse}</span>
+              <span class="chint" id="c_house_hint"></span>
+            </div>
+            <div class="cbody">
+              <button class="step" id="c_house_dn" type="button" aria-label="−">−</button>
+              <span class="cval" id="c_house_val">–</span>
+              <button class="step" id="c_house_up" type="button" aria-label="+">+</button>
+            </div>
+          </div>
+          <div class="ctl hw" id="c_hw">
+            <div class="clabel"><span>${t.cHotwater}</span></div>
+            <div class="cbody" id="c_hw_modes"></div>
+            <button class="pillbtn boost hidden" id="c_hw_boost" type="button">${t.ctlBoost}</button>
+          </div>
+        </div>
+
         <div class="demand" id="demand">
           <div class="drow">
             <span class="dlabel">${t.demand}</span>
@@ -958,6 +1246,17 @@ class NibepiFlowCard extends HTMLElement {
             const el = this.$(id);
             if (el) el.addEventListener('click', () => this._more(this._e[key]));
         }
+
+        if (this._cfg.controls === false) this.$('controls').style.display = 'none';
+        this.$('c_house_dn').addEventListener('click', () => this._nudge(-1));
+        this.$('c_house_up').addEventListener('click', () => this._nudge(1));
+        this.$('c_hw_boost').addEventListener('click', () => this._boost());
+        this.$('c_hw_modes').addEventListener('click', ev => {
+            const b = ev.target.closest('.pillbtn');
+            if (b && b.dataset.opt) {
+                this._write('hw_mode', b.dataset.opt, 'select', 'select_option', 'option');
+            }
+        });
 
         this._measure();
         this._built = true;
@@ -1072,6 +1371,8 @@ class NibepiFlowCard extends HTMLElement {
         // both geometries are painted; CSS decides which one is on screen
         for (const v of VARIANTS) this._paintVariant(v, d, deg, pct);
 
+        this._renderControls();
+
         // ── house heat demand, from the degree minute register ───────────────
         const dm = n('degree_minutes');
         const dmStart = n('dm_start');
@@ -1159,6 +1460,14 @@ class NibepiFlowCard extends HTMLElement {
         set(`${v}_v_cprstate`, d.cprState !== null
             ? (t.cprMap[d.cprState] || String(d.cprState))
             : (d.running ? t.cprMap[60] : t.idle));
+        $(`${v}_lamp`).classList.toggle('on', d.running);
+
+        // what the two consumers have been told to aim at
+        const hw = this._hwLabel();
+        set(`${v}_v_hwcap`, hw ? `${t.cHotwater} · ${hw}` : t.cHotwater);
+        const ctl = this._houseCtl();
+        const tgt = ctl && ctl.key === 'room_set' ? parseFloat(this._ctlState('room_set')) : NaN;
+        set(`${v}_v_roomtgt`, Number.isNaN(tgt) || d.room === null ? '' : `→ ${tgt.toFixed(1)} °C`);
 
         const ring = $(`${v}_ring`);
         const r = Number(ring.getAttribute('r'));
@@ -1217,7 +1526,7 @@ window.customCards = window.customCards || [];
 window.customCards.push({
     type: 'nibepi-flow-card',
     name: 'NibePi Flow Card',
-    description: 'Live hydraulic schematic for a NIBE heat pump: borehole, refrigerant circuit, heating, hot water and house heat demand.',
+    description: 'Live schematic for a NIBE heat pump: borehole, machine, floor heating, hot water tank, house heat demand — plus house target and hot water controls.',
     preview: false,
     documentationURL: 'https://github.com/JustChr/nibepi',
 });

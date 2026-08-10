@@ -92,6 +92,9 @@ views:
               flow: sensor.nibe_heat_pump_nibe_bf1_ep14_flow
               supply_pump: sensor.nibe_heat_pump_nibe_supply_pump_speed_ep14
               room: sensor.nibe_heat_pump_nibe_bt50_room_temp_s1
+              # room_set drives the House target stepper — or curve_offset does,
+              # when use_room_sensor is off and the pump ignores the set point.
+              # Set `controls: false` above to make the card read-only.
               room_set: number.nibe_heat_pump_nibe_room_sensor_setpoint_s1
               curve: number.nibe_heat_pump_nibe_heat_curve_s1
               curve_offset: number.nibe_heat_pump_nibe_heat_offset_s1
@@ -99,6 +102,8 @@ views:
               # hot water — this installation has no BT7, so the BT7 pill is
               # left unconfigured and the card drops it from the drawing
               hw_load: sensor.nibe_heat_pump_nibe_bt6_hw_load
+              # these two are the hot water controls: comfort mode pills and the
+              # Extra hot water toggle
               hw_mode: select.nibe_heat_pump_nibe_hot_water_comfort_mode
               hw_temporary: select.nibe_heat_pump_nibe_temporary_lux
               runtime_compressor_hw: sensor.nibe_heat_pump_nibe_tot_hw_op_time_compr_eb100_ep14

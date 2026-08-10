@@ -17,16 +17,19 @@ energy meters the Energy dashboard accepts.
 
 `nibepi-flow-card` draws the installation as a picture of the house rather than
 a page from the wiring manual, rendered in Home Assistant's visual language:
-flat surfaces, HA colour tokens, tabular numerals, restrained motion. Four
+flat surfaces, HA colour tokens, tabular numerals, restrained motion. Five
 layers, top to bottom:
 
 1. **Summary row** — heat output, electrical input, live COP, COP today.
 2. **The schematic** — sun and outside temperature, borehole below a hatched
-   ground line, the machine outline containing the refrigerant circuit, the
-   diverter, a house whose floor is the heating loop, and a hot water cylinder.
-   Drawn twice: landscape for a wide card, portrait for a phone (see below).
-3. **House heat demand** — the degree minute register, reframed (see below).
-4. **Grouped detail rows** — eight groups covering the heating circuit, hot
+   ground line, the machine drawn as a cabinet with the refrigerant circuit
+   inside it, the diverter, a house whose floor is the heating loop, and a hot
+   water cylinder. Drawn twice: landscape for a wide card, portrait for a phone
+   (see below).
+3. **The two controls** — house target temperature, hot water comfort mode and
+   a one-off hot water boost (see below).
+4. **House heat demand** — the degree minute register, reframed (see below).
+5. **Grouped detail rows** — eight groups covering the heating circuit, hot
    water, ground loop, compressor, immersion heater, electrical, energy and
    control signals.
 
@@ -46,19 +49,27 @@ It is a picture of the installation, not a page of designations:
   supply does not stop at the wall and the hot water supply does not stop at the
   tank — each runs on *into* its serpentine, so the flow dots travel through the
   thing being heated and the return picks up where that serpentine ends.
-- **The refrigerant circuit is drawn.** Inside the machine outline: the exchanger
-  that takes heat from the ground, the compressor, the exchanger that gives it to
-  the water, and the pressure drop back. That is what makes the drawing explain
+- **The machine is an appliance, not an enclosure.** A cabinet with feet, a
+  control panel, a little display showing what the compressor is doing and a
+  lamp that lights when it runs — drawn unfilled, so the inside stays visible
+  as a cutaway. The compressor sits at the bottom of the cabinet, where it sits
+  in the real machine, and is drawn as a scroll rather than as the bar-and-wedge
+  glyph from the hydraulic standard. Heat exchangers are blocks with water
+  waving through them.
+- **The refrigerant circuit is drawn.** Inside the cabinet: the exchanger that
+  takes heat from the ground, the compressor, the exchanger that gives it to the
+  water, and the run back across the top. That is what makes the drawing explain
   *how* heat gets from the ground into the floor rather than just asserting that
   it does. It has its own colour and line weight so it never reads as one of the
-  water circuits, and it circulates whenever the compressor turns.
+  water circuits, and it circulates whenever the compressor turns. The expansion
+  valve is not drawn: it was one symbol too many for what it added.
 - **Every loop is closed**, with flow and return as separate routed pipes and a
   direction arrow on each leg, so the circuit still reads when everything has
   stopped. The two returns share the bottom header, as they do on the real
   installation.
-- **Symbols stay standard** where they carry meaning: circulation pumps as
-  circle-and-triangle, the compressor as a bar-and-wedge, plate heat exchangers
-  as a box with a diagonal, the expansion valve as a bowtie.
+- **Symbols stay standard** where they still carry meaning: circulation pumps as
+  circle-and-triangle, the diverter as a three-port valve with the live outlet
+  filled.
 - **Labels have a background-coloured halo** (`paint-order: stroke`), which is
   what allows a reading to sit directly on the pipe or the tank wall it belongs
   to instead of being parked in a legend.
@@ -82,6 +93,27 @@ What is live:
   is pointing the other way.
 - **Alarms surface at the top** with human-readable text for all 265 codes from
   NibePi's own alarm table, not just the number.
+
+### The two controls
+
+Everything else on the card is a reading. Two things are worth changing from the
+same screen you are looking at, so they are the only two the card can write:
+
+| Tile | Writes | Notes |
+|---|---|---|
+| **House target** | `room_set` (`number.set_value`) | Steppers of one `step` from the entity's own attributes, clamped to its `min`/`max`. The set point also appears in the drawing beside the room reading, as `→ 21.5 °C`. |
+| **House warmth** | `curve_offset` (`number.set_value`) | What the tile becomes when `use_room_sensor` is **off** — the pump ignores the room set point entirely in that state, so offering it would be a lie. Labelled with a hint saying why. |
+| **Hot water** | `hw_mode` (`select.select_option`) | One pill per option the entity actually offers — Economy, Normal, Luxury, Smart Control — so nothing is hard-coded. |
+| **Extra hot water** | `hw_temporary` (`select.select_option`) | A single toggle: on picks the "one time increase" option, off picks the first one. The active state also replaces the comfort mode in the tank caption. |
+
+Two details make it feel like a switch rather than a form:
+
+- **A write in flight wins for 15 seconds.** NibePi writes the register and only
+  reads it back on the next poll, so an optimistic value is held over the round
+  trip. Without it the number snaps back under your finger and three quick taps
+  on `+` produce one step instead of three.
+- **The tiles disappear** when their entities are not configured, like every
+  other part of the card. `controls: false` drops the row entirely.
 
 ### Two geometries, no squashing
 
@@ -175,7 +207,8 @@ Config is a flat entity map — see the `custom:nibepi-flow-card` block in
 `dashboard.yaml`. Every key is optional: anything you leave out, or whose
 register is not enabled, is left out of the drawing, and its summary chip, detail
 row or whole group hides itself. `details: false` drops the grouped rows and
-keeps the diagram, summary and demand meter.
+keeps the diagram, summary, controls and demand meter; `controls: false` drops
+the two control tiles and leaves the card read-only.
 
 Set `language: de` or `language: en`; the card ships with both label sets,
 including `Prio`, compressor state and every detail row label.
@@ -261,7 +294,7 @@ cp nibepi-card.js /config/www/nibepi-card.js
 
 Register it under **Settings → Dashboards → ⋮ → Resources → Add resource**:
 
-- URL `/local/nibepi-card.js?v=3.3.0`
+- URL `/local/nibepi-card.js?v=3.4.0`
 - Type **JavaScript module**
 
 **Keep the `?v=` and bump it on every update.** Home Assistant serves `/local/`
@@ -270,18 +303,18 @@ loaded the card once will not go back for a new one, no matter what you copy ove
 the file on disk. Changing the query string is what actually invalidates it; a
 normal reload will not.
 
-The console should log `NIBEPI-FLOW-CARD v3.3.0` on load. If it reports an older
+The console should log `NIBEPI-FLOW-CARD v3.4.0` on load. If it reports an older
 version, the browser is serving a cached copy and nothing else you change will
 have any effect. Two ways to check what is really running:
 
 ```js
-customElements.get('nibepi-flow-card').version     // -> "3.3.0"
+customElements.get('nibepi-flow-card').version     // -> "3.4.0"
 ```
 
 and the card logs its own layout decision whenever it changes:
 
 ```
-NIBEPI-FLOW-CARD v3.3.0: card 1532px -> landscape (layout: auto, wide_at: 900)
+NIBEPI-FLOW-CARD v3.4.0: card 1532px -> landscape (layout: auto, wide_at: 900)
 ```
 
 That line distinguishes the two reasons the schematic can come out portrait — a
