@@ -430,6 +430,17 @@ function handleAnnouncement(buf) {
 }
 
 // ── F-series frame decoder (ported from index.js decodeMessage) ───────────────
+// Each register's option values, parsed once per model rather than on every
+// frame. Keyed by the model's register objects, so loading a model starts fresh.
+const optionCache = new WeakMap();
+function listedOptions(reg) {
+    if (!optionCache.has(reg)) {
+        const map = parseStateMap(reg.info);
+        optionCache.set(reg, map ? new Set(Object.keys(map).map(Number)) : null);
+    }
+    return optionCache.get(reg);
+}
+
 function handleFrame(buf, rmuFlag) {
     if (!buf || buf.length < 5) return;
     if (buf[3] === 109) { handleAnnouncement(buf); return; }
@@ -480,7 +491,15 @@ function handleFrame(buf, rmuFlag) {
         const max    = Number(reg.max);
 
         if (min !== 0 || max !== 0) {
-            if (scaled > max / factor || scaled < min / factor) {
+            // A value the register lists as one of its options is valid whatever
+            // min/max say. Some model exports get that range wrong — 47139 lists
+            // 40=Auto under a max of 30, 47382 lists 0=Off under a min of 1 — and
+            // the pump does report those values, so a brine pump in Auto never
+            // reached Home Assistant and the High brine alarm switch could never
+            // show Off. Writes, the UI editor and HA discovery already go by the
+            // options rather than the range.
+            const options = listedOptions(reg);
+            if (!(options && options.has(data)) && (scaled > max / factor || scaled < min / factor)) {
                 log('error', `Register ${address} out of range: ${scaled}`);
                 continue;
             }
