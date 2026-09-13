@@ -210,7 +210,7 @@ bridge.js remounts rw temporarily only when saving config, then returns to ro im
 | sudo for `nibepi` | exactly four commands, listed in `/etc/sudoers.d/nibepi`: remount `/` rw, remount it ro, `systemctl restart bridge`, and start the updater |
 | Updates | `nibepi-update.service`, running as root. It takes no input: it asks GitHub for the latest release itself, downloads it and runs that release's `patches/install.sh` |
 
-`patches/install.sh` is the only install path; `setup.sh` and the updater both run it. It builds the new version in `/opt/nibepi.new`, including `npm install` when the dependencies changed, and swaps it in only once that has succeeded. A failed update leaves the running version intact.
+`patches/install.sh` is the only install path; `setup.sh` and the updater both run it. It builds the new version in `/opt/nibepi.new`, including `npm install` when the dependencies changed, and swaps it in only once that has succeeded. A failed update leaves the running version intact, and the previous version stays in `/opt/nibepi.old` until the next update.
 
 Follow an update with `journalctl -u nibepi-update -f`. Reading the config now needs root: `sudo cat /etc/nibepi/config.json`.
 

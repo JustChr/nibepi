@@ -131,11 +131,13 @@ chmod -R go-w "$STAGE"
 step "Installing to $APP..."
 [ -d "$APP" ] && mv "$APP" "$OLD"
 mv "$STAGE" "$APP"
-# Empty the old tree but keep its directory. The 1.7.x updater runs with its
-# working directory there, and a process sitting in a deleted directory pins it
-# as an orphan inode, which makes every `remount,ro /` fail with "mount point is
-# busy" until that process exits. The next install removes the empty directory.
-find "$OLD" -mindepth 1 -delete
+# The old tree is renamed, never deleted here; the next install removes it
+# before staging. Deleting it now would leave files still in use without a
+# name — update.sh, which bash keeps open while it runs this script; the
+# serialport addon the previous backend has mapped until the handover; the
+# 1.7.x updater's working directory — and any such orphan makes every
+# `remount,ro /` fail with "mount point is busy" until its process exits.
+# Unchanged node_modules are hard links, so keeping the tree costs no space.
 ok "Files installed."
 
 # ── 3. systemd units ──────────────────────────────────────────────────────────
