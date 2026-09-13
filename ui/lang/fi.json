@@ -112,5 +112,7 @@
   "set.authEnable": "Ota todennus käyttöön",
   "set.authUser": "Käyttäjänimi",
   "set.authPass": "Salasana",
-  "toast.auth": "Todennusasetukset tallennettu."
+  "toast.auth": "Todennusasetukset tallennettu.",
+  "hdr.authOff": "⚠ Todennus pois — kuka tahansa verkossa voi ohjata pumppua",
+  "set.passKeep": "(ennallaan)"
 }

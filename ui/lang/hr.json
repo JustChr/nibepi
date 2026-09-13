@@ -112,5 +112,7 @@
   "set.authEnable": "Omogući autentifikaciju",
   "set.authUser": "Korisničko ime",
   "set.authPass": "Lozinka",
-  "toast.auth": "Postavke autentifikacije spremljene."
+  "toast.auth": "Postavke autentifikacije spremljene.",
+  "hdr.authOff": "⚠ Autentifikacija isključena — bilo tko u mreži može upravljati pumpom",
+  "set.passKeep": "(nepromijenjeno)"
 }

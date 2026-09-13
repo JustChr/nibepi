@@ -112,5 +112,7 @@
   "set.authEnable": "Hitelesites engedelyezese",
   "set.authUser": "Felhasznalonev",
   "set.authPass": "Jelszo",
-  "toast.auth": "Hitelesitesi beallitasok mentve."
+  "toast.auth": "Hitelesitesi beallitasok mentve.",
+  "hdr.authOff": "⚠ Hitelesítés kikapcsolva — a hálózaton bárki vezérelheti a szivattyút",
+  "set.passKeep": "(változatlan)"
 }

@@ -112,5 +112,7 @@
   "set.authEnable": "Omogoči overjanje",
   "set.authUser": "Uporabniško ime",
   "set.authPass": "Geslo",
-  "toast.auth": "Nastavitve overjanja shranjene."
+  "toast.auth": "Nastavitve overjanja shranjene.",
+  "hdr.authOff": "⚠ Overjanje izklopljeno — kdorkoli v omrežju lahko upravlja črpalko",
+  "set.passKeep": "(nespremenjeno)"
 }

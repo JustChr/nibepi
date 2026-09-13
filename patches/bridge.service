@@ -4,7 +4,11 @@ After=network.target
 
 [Service]
 Type=simple
-User=pi
+# Its own unprivileged account, not pi: pi has passwordless sudo, so running as
+# pi made any hole in the HTTP API root. See patches/install.sh.
+User=nibepi
+Group=nibepi
+SupplementaryGroups=dialout
 WorkingDirectory=/opt/nibepi
 ExecStart=/usr/local/bin/node --max-old-space-size=64 /opt/nibepi/bridge.js
 Restart=always

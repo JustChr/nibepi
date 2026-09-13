@@ -112,5 +112,7 @@
   "set.authEnable": "Enable Authentication",
   "set.authUser": "Username",
   "set.authPass": "Password",
-  "toast.auth": "Authentication settings saved."
+  "toast.auth": "Authentication settings saved.",
+  "hdr.authOff": "⚠ Authentication off — anyone on your network can control the pump",
+  "set.passKeep": "(unchanged)"
 }

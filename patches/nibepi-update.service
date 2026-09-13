@@ -1,0 +1,12 @@
+[Unit]
+Description=NibePi update (installs the latest GitHub release)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Root, because installing means replacing /opt/nibepi and systemd units. The
+# bridge itself runs unprivileged and can only start this unit, not steer it.
+ExecStart=/opt/nibepi/update.sh
+# npm install on a Pi Zero W takes several minutes when dependencies change.
+TimeoutStartSec=30min

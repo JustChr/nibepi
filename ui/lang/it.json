@@ -112,5 +112,7 @@
   "set.authEnable": "Abilita autenticazione",
   "set.authUser": "Nome utente",
   "set.authPass": "Password",
-  "toast.auth": "Impostazioni autenticazione salvate."
+  "toast.auth": "Impostazioni autenticazione salvate.",
+  "hdr.authOff": "⚠ Autenticazione disattivata — chiunque nella rete può controllare la pompa",
+  "set.passKeep": "(invariata)"
 }

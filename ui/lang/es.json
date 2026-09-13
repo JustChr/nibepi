@@ -112,5 +112,7 @@
   "set.authEnable": "Activar autenticacion",
   "set.authUser": "Usuario",
   "set.authPass": "Contrasena",
-  "toast.auth": "Configuracion de autenticacion guardada."
+  "toast.auth": "Configuracion de autenticacion guardada.",
+  "hdr.authOff": "⚠ Autenticación desactivada — cualquiera en su red puede controlar la bomba",
+  "set.passKeep": "(sin cambios)"
 }

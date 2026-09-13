@@ -187,15 +187,15 @@
   <!-- ── Step 3: Authentication ── -->
   <div class="step" id="step-3">
     <h2>Authentication</h2>
-    <p class="step-desc">Optionally protect the web UI with HTTP Basic Auth. Anyone on your local network can access the UI unless you enable this.</p>
+    <p class="step-desc">Protect the web UI with a username and password. Strongly recommended: without it, anyone on your network can change pump settings and install software on the Pi.</p>
     <div class="toggle-row">
       <label class="switch">
-        <input type="checkbox" id="a-enable">
+        <input type="checkbox" id="a-enable" checked>
         <span class="slider"></span>
       </label>
       <span>Enable authentication</span>
     </div>
-    <div id="a-fields" style="display:none;margin-top:12px">
+    <div id="a-fields" style="margin-top:12px">
       <div class="form-group">
         <label>Username</label>
         <input type="text" id="a-user" autocomplete="username" placeholder="e.g. admin">
@@ -377,9 +377,21 @@ function buildSummary() {
     ['MQTT',           mqttOn ? 'Enabled → ' + mqttH : 'Disabled'],
     ['Authentication', authOn ? 'Enabled (user: ' + user + ')' : 'Disabled'],
   ];
-  document.getElementById('summary').innerHTML = rows.map(([k, v]) =>
-    `<div class="summary-row"><span class="key">${k}</span><span class="val">${v}</span></div>`
-  ).join('');
+  // Built as nodes, not HTML: the values are whatever was typed into the form.
+  const summary = document.getElementById('summary');
+  summary.textContent = '';
+  for (const [k, v] of rows) {
+    const row = document.createElement('div');
+    row.className = 'summary-row';
+    const key = document.createElement('span');
+    key.className = 'key';
+    key.textContent = k;
+    const val = document.createElement('span');
+    val.className = 'val';
+    val.textContent = v;
+    row.append(key, val);
+    summary.appendChild(row);
+  }
 }
 
 document.getElementById('btn-4-back').addEventListener('click', () => showStep(3));

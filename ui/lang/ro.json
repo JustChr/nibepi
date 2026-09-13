@@ -112,5 +112,7 @@
   "set.authEnable": "Activeaza autentificarea",
   "set.authUser": "Utilizator",
   "set.authPass": "Parola",
-  "toast.auth": "Setarile de autentificare salvate."
+  "toast.auth": "Setarile de autentificare salvate.",
+  "hdr.authOff": "⚠ Autentificare dezactivată — oricine din rețea poate controla pompa",
+  "set.passKeep": "(neschimbată)"
 }

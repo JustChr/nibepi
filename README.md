@@ -18,11 +18,11 @@ The original project used Node-RED and a custom Pi image. This fork replaces all
 - **Home Assistant MQTT Discovery** — sensors, numbers, switches, and selects created automatically
 - **Register history charts** — up to 360 data points per register with adaptive downsampling; hover or tap to show a crosshair and tooltip with exact value and age
 - **Register write from UI** — R/W registers show an inline editor with type-appropriate controls: dropdown for state maps, validated number input with unit label and min/max from the pump model
-- **OTA updates** — check for and install new releases directly from the Status tab
+- **OTA updates** — check for and install new releases directly from the Status tab; a separate root updater picks the release itself, so the bridge runs without root rights
 - **Alarm display & history** — active alarm shown in header and status panel; full history of up to 50 past alarms in Status tab
 - **Config backup/restore** — export config.json with one click; restore by uploading a previously exported file
 - **MQTT TLS** — optional encrypted connection to the broker (port 8883); custom CA cert path supported
-- **Web UI authentication** — optional HTTP Basic Auth; set your own username and password in Settings → Authentication before enabling
+- **Web UI authentication** — HTTP Basic Auth, on by default in the setup wizard; the password is stored as a scrypt hash, and a red banner warns while authentication is off
 - **Live log streaming** — tail the bridge log in real time from the browser
 - **Memory usage chart** — bridge + backend RSS sampled hourly, displayed as a 2-week sparkline with hover tooltip
 - **SD card protection** — read-only root filesystem with tmpfs for `/tmp` and `/var/log`; remounts rw only when saving settings
@@ -142,10 +142,11 @@ The script handles everything automatically:
 - Expands the filesystem to the full card
 - Configures the hardware UART for RS485 (disables serial console, frees UART from Bluetooth)
 - Sets hostname to `nibepi` if not already set
-- Installs Node.js 22 for ARMv6l (v22 is the newest Node built for ARMv6 — 24 and later are not, so this is the ceiling on a Zero W)
+- Installs Node.js 22 for ARMv6l, checked against a pinned SHA-256 (v22 is the newest Node built for ARMv6 — 24 and later are not, so this is the ceiling on a Zero W)
 - Downloads the latest NibePi release from GitHub
+- Creates the `nibepi` service account the bridge runs as (see [Privileges](#privileges))
 - Installs npm dependencies (compiles serialport, ~6 min)
-- Installs and enables the systemd service
+- Installs and enables the systemd services
 - Applies hardening (read-only root, tmpfs, watchdog, network watchdog, Bluetooth disabled)
 - Reboots if any boot-level changes were made
 
@@ -196,6 +197,24 @@ sudo reboot
 | Time sync | `fake-hwclock` can't save on a read-only root, so every boot starts from a stale clock |
 
 bridge.js remounts rw temporarily only when saving config, then returns to ro immediately after.
+
+### Privileges
+
+`bridge.js` runs as **`nibepi`**, a system account with no login and no password, not as `pi`. `pi` is the SSH login and has passwordless sudo, so while the bridge ran as `pi`, any flaw in its web API was a root shell.
+
+| What | Arrangement |
+|---|---|
+| `bridge.js`, `backend.js` | run as `nibepi`, a member of `dialout` for the serial port |
+| `/opt/nibepi` | owned by root and read-only to `nibepi`, so the bridge cannot rewrite its own code or the scripts root timers run from there |
+| `/etc/nibepi` | owned by `nibepi`, mode 750, because it holds the MQTT password |
+| sudo for `nibepi` | exactly four commands, listed in `/etc/sudoers.d/nibepi`: remount `/` rw, remount it ro, `systemctl restart bridge`, and start the updater |
+| Updates | `nibepi-update.service`, running as root. It takes no input: it asks GitHub for the latest release itself, downloads it and runs that release's `patches/install.sh` |
+
+`patches/install.sh` is the only install path; `setup.sh` and the updater both run it. It builds the new version in `/opt/nibepi.new`, including `npm install` when the dependencies changed, and swaps it in only once that has succeeded. A failed update leaves the running version intact.
+
+Follow an update with `journalctl -u nibepi-update -f`. Reading the config now needs root: `sudo cat /etc/nibepi/config.json`.
+
+**Upgrading from 1.7.x** happens on the first update from the UI: the old updater runs the new `harden.sh`, which hands the job to `install.sh`. The new backend runs as `nibepi` and is not allowed to signal the old one, which runs as `pi`, so `install.sh` sends the usual serial handover signal itself. The pump goes without ACKs for a few seconds, as on any restart.
 
 ### Network watchdog
 
@@ -325,6 +344,8 @@ R/W registers have an edit button. The editor adapts to the register type:
 - State map registers show a **dropdown** with labelled options
 - Numeric registers show a **number input** with the unit appended, pre-filled min/max bounds from the pump model, and inline validation
 
+The bridge enforces the same limits on writes that arrive over MQTT (`nibe/modbus/<register>/set`) or the HTTP API: a value outside the range, or not among a state map's options, is refused and logged. Anyone who can publish to your broker can still write any value *within* those limits, so give the broker per-client credentials if other people use it.
+
 ### Status & System tab
 
 | Control | Description |
@@ -380,7 +401,7 @@ On a fresh install (no existing `/etc/nibepi/config.json`), the bridge automatic
 1. **Language** — pick the UI language
 2. **Serial Connection** — select the RS485 port and optionally the pump model
 3. **MQTT** — configure the broker (or skip for later)
-4. **Authentication** — optionally set a username and password
+4. **Authentication** — set a username and password (on by default; can be switched off)
 5. **Review & Finish** — save and redirect to the main UI
 
 Existing installs that already have a config file skip the wizard entirely.
@@ -389,21 +410,27 @@ Existing installs that already have a config file skip the wizard entirely.
 
 ## Authentication
 
-Web UI authentication is **disabled by default**. To enable it:
+The setup wizard turns authentication **on** unless you switch it off. While it is off, a red banner across the top of the UI says so. To change it later:
 
 1. Open the UI → **Settings** → **Authentication**
-2. Enter your desired **username** and **password**
+2. Enter a **username** and **password**
 3. Toggle **Enable Authentication** on and click **Save**
 
 From that point on, every browser connecting to port 1880 will get a native HTTP Basic Auth prompt. To disable it again, uncheck the toggle and save.
 
-> **Tip:** If you lock yourself out (forgot the password), SSH into the Pi and edit `/etc/nibepi/config.json` — set `"auth": { "enable": false }` and restart the bridge.
+The password is stored only as a scrypt hash. Neither it nor the MQTT password is ever sent back to the browser: the password fields stay empty, and saving with a field left empty keeps the stored password. Clearing the MQTT username clears the MQTT password with it. The **Export Config** backup is the exception. It contains the MQTT password and the password hash, so that restoring it brings both back; keep the file somewhere private.
+
+> **Tip:** If you lock yourself out (forgot the password), SSH into the Pi, run `sudo mount -o remount,rw /`, edit `/etc/nibepi/config.json` with sudo, set `"auth": { "enable": false }` and restart the bridge.
+
+> **Security:** Without authentication, anyone who can reach port 1880 can change pump settings and start a software update. Turn authentication on unless the Pi sits on a network only you use, and never forward port 1880 to the internet. Basic Auth over plain HTTP is readable by anyone on the same network, so it keeps out casual access but not someone already sniffing your LAN.
+
+While authentication is off, the bridge also refuses requests addressed to a host name it does not recognise as local: names under `.local`, `.lan`, `.home.arpa`, `.fritz.box` and similar, or a bare name like `nibepi`, are accepted. This blocks DNS rebinding, where a web page points a host name of its own at the Pi to get around the browser's same-origin rules. Opening the UI by IP address always works; to use another name, add it to `"http": { "allowedHosts": ["nibepi.example.net"] }` in `config.json`.
 
 ---
 
 ## Deploying updates
 
-Use the **Software** card in the Status & System tab of the UI — click "Check for update", then "Install" if a newer version is available. The bridge restarts automatically and the pump stays connected during the handover.
+Use the **Software** card in the Status & System tab of the UI — click "Check for update", then "Install" if a newer version is available. The bridge restarts automatically and the pump stays connected during the handover. Follow progress with `journalctl -u nibepi-update -f`.
 
 To update manually from the Pi:
 
@@ -434,6 +461,13 @@ journalctl -u bridge -f
 sudo systemctl disable nodered
 ```
 
+The bridge runs as `nibepi`, and the old Node-RED backend runs as `pi`, so the new backend is not allowed to send it the handover signal. The old backend then holds the port until its 10-minute zombie timeout. To hand over at once, signal it yourself:
+
+```bash
+pgrep -a -u pi -x node        # pick the line ending in backend.js
+sudo kill -USR2 <pid>
+```
+
 ---
 
 ## Troubleshooting
@@ -453,7 +487,7 @@ Check that `/usr/local/bin/node` exists and is v18:
 
 If the previous backend.js left a stale PID file:
 ```bash
-rm -f /dev/shm/nibepi_backend.pid /tmp/nibepi_backend.pid
+sudo rm -f /dev/shm/nibepi_backend.pid /tmp/nibepi_backend.pid
 sudo systemctl restart bridge
 ```
 

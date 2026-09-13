@@ -112,5 +112,7 @@
   "set.authEnable": "Aktiver godkendelse",
   "set.authUser": "Brugernavn",
   "set.authPass": "Adgangskode",
-  "toast.auth": "Godkendelsesindstillinger gemt."
+  "toast.auth": "Godkendelsesindstillinger gemt.",
+  "hdr.authOff": "⚠ Godkendelse slået fra — alle på netværket kan styre pumpen",
+  "set.passKeep": "(uændret)"
 }

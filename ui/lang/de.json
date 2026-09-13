@@ -112,5 +112,7 @@
   "set.authEnable": "Authentifizierung aktivieren",
   "set.authUser": "Benutzername",
   "set.authPass": "Passwort",
-  "toast.auth": "Authentifizierungseinstellungen gespeichert."
+  "toast.auth": "Authentifizierungseinstellungen gespeichert.",
+  "hdr.authOff": "⚠ Anmeldung aus — jeder im Netzwerk kann die Wärmepumpe steuern",
+  "set.passKeep": "(unverändert)"
 }

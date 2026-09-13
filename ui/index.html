@@ -190,6 +190,10 @@
 
   .inline-note { font-size: 12px; color: var(--muted); margin-top: 6px; }
   .section-sep { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
+  #auth-banner {
+    background: #2d1a1a; color: var(--red); border-bottom: 1px solid var(--border);
+    padding: 8px 24px; font-size: 13px; font-weight: 600; cursor: pointer;
+  }
   .spin { display: inline-block; animation: spin .6s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
 </style>
@@ -223,6 +227,7 @@
   <span id="hdr-version" class="badge" style="margin-left:auto;cursor:default"></span>
   <span id="hdr-update" class="badge warn" style="display:none;cursor:pointer" title=""><span class="dot"></span><span id="hdr-update-text"></span></span>
 </header>
+<div id="auth-banner" data-i18n="hdr.authOff" style="display:none"></div>
 
 <nav>
   <button class="active" data-tab="tab-registers" data-i18n="nav.reg"></button>
@@ -680,6 +685,10 @@ function applyStatus(s) {
     if (cur) cur.textContent = `v${s.version}`;
   }
 
+  const authBanner = $('auth-banner');
+  authBanner.style.display = s.authEnabled ? 'none' : '';
+  authBanner.onclick = () => switchTab('tab-settings');
+
   const updateBadge = $('hdr-update');
   if (s.updateAvailable && s.latestVersion) {
     $('hdr-update-text').textContent = t('hdr.updateAvailable', s.latestVersion);
@@ -726,6 +735,8 @@ function applyStatus(s) {
 }
 
 // ── Config load ───────────────────────────────────────────────────────────────
+let authHasPass = false;   // a login password is stored; its field stays empty
+
 async function loadConfig() {
   const c = await api('GET', '/config');
   $('serial-port').value = c.serial && c.serial.port || '/dev/ttyAMA0';
@@ -734,7 +745,9 @@ async function loadConfig() {
   $('mqtt-host').value        = m.host      || '';
   $('mqtt-port').value        = m.port      || '1883';
   $('mqtt-user').value        = m.user      || '';
-  $('mqtt-pass').value        = m.pass      || '';
+  // The bridge never sends stored passwords back; an empty field keeps them.
+  $('mqtt-pass').value        = '';
+  $('mqtt-pass').placeholder  = m.hasPass ? t('set.passKeep') : '';
   $('mqtt-topic').value       = m.topic     || 'nibe/modbus/';
   $('mqtt-enable').checked    = !!m.enable;
   $('mqtt-discovery').checked = !!m.discovery;
@@ -747,7 +760,9 @@ async function loadConfig() {
   $('log-level').value = logLvl || 'warn';
   const authCfg = c.auth || {};
   $('auth-user').value    = authCfg.user  || '';
-  $('auth-pass').value    = authCfg.pass  || '';
+  authHasPass = !!authCfg.hasPass;
+  $('auth-pass').value    = '';
+  $('auth-pass').placeholder = authHasPass ? t('set.passKeep') : '';
   $('auth-enable').checked = !!authCfg.enable;
   updateAuthToggle();
   // Apply saved language if different from what was already loaded
@@ -795,7 +810,7 @@ $('mqtt-tls').addEventListener('change', () => {
 
 // ── MQTT save ─────────────────────────────────────────────────────────────────
 $('btn-save-mqtt').addEventListener('click', async () => {
-  await api('POST', '/config', {
+  const r = await api('POST', '/config', {
     mqtt: {
       enable:    $('mqtt-enable').checked,
       host:      $('mqtt-host').value,
@@ -808,6 +823,13 @@ $('btn-save-mqtt').addEventListener('click', async () => {
       tlsCaFile: $('mqtt-cafile').value.trim(),
     }
   });
+  if (!r.ok) { showToast(r.error || 'Error'); return; }
+  // Mirror the bridge's rule: a typed password is now stored, an empty one kept,
+  // and no username means no password at all.
+  const passEl = $('mqtt-pass');
+  if (passEl.value) passEl.placeholder = t('set.passKeep');
+  if (!$('mqtt-user').value) passEl.placeholder = '';
+  passEl.value = '';
   showToast(t('toast.mqtt'));
 });
 
@@ -819,7 +841,8 @@ $('config-import-file').addEventListener('change', async (e) => {
   try {
     const text = await file.text();
     const json = JSON.parse(text);
-    await api('POST', '/config/import', json);
+    const r = await api('POST', '/config/import', json);
+    if (!r.ok) throw new Error(r.error || 'Import failed');
     note.style.display = '';
     note.style.color = 'var(--green)';
     note.textContent = t('toast.import');
@@ -834,7 +857,7 @@ $('config-import-file').addEventListener('change', async (e) => {
 
 // ── Auth settings ─────────────────────────────────────────────────────────────
 function updateAuthToggle() {
-  const hasCredentials = $('auth-user').value.trim() && $('auth-pass').value.trim();
+  const hasCredentials = $('auth-user').value.trim() && ($('auth-pass').value.trim() || authHasPass);
   $('auth-enable').disabled = !hasCredentials;
   if (!hasCredentials) $('auth-enable').checked = false;
 }
@@ -843,13 +866,17 @@ $('auth-user').addEventListener('input', updateAuthToggle);
 $('auth-pass').addEventListener('input', updateAuthToggle);
 
 $('btn-save-auth').addEventListener('click', async () => {
-  await api('POST', '/config', {
+  const r = await api('POST', '/config', {
     auth: {
       enable: $('auth-enable').checked,
       user:   $('auth-user').value.trim(),
-      pass:   $('auth-pass').value.trim(),
+      pass:   $('auth-pass').value.trim(),   // empty keeps the stored password
     }
   });
+  if (!r.ok) { showToast(r.error || 'Error'); return; }
+  if ($('auth-pass').value.trim()) authHasPass = true;
+  $('auth-pass').value = '';
+  $('auth-pass').placeholder = authHasPass ? t('set.passKeep') : '';
   showToast(t('toast.auth'));
 });
 
@@ -1419,8 +1446,8 @@ function openWriteEditor(addr, triggerBtn) {
     if (btnOk.disabled) return;
     const val = input.value;
     try {
-      await api('POST', '/register/set', { register: addr, value: val });
-      showToast(t('toast.regSet', addr));
+      const r = await api('POST', '/register/set', { register: addr, value: val });
+      showToast(r.ok ? t('toast.regSet', addr) : (r.error || 'Error'));
     } catch (e) {
       showToast(e.message);
     }
@@ -1558,7 +1585,10 @@ $('btn-ver-install').addEventListener('click', async () => {
   $('btn-ver-install').disabled = true;
   $('ver-note').textContent = t('sw.updating');
   try {
-    await api('POST', '/update', { url: _latestRelease.url, version: _latestRelease.latest });
+    // The bridge picks the tarball itself; it only needs to know which version
+    // was confirmed, so it can refuse if a newer one appeared in the meantime.
+    const r = await api('POST', '/update', { version: _latestRelease.latest });
+    if (!r.ok) throw new Error(r.error || 'update refused');
     addLogLine(t('ota.log', _latestRelease.latest));
     setTimeout(() => location.reload(), 30000);
   } catch(e) {

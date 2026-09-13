@@ -112,5 +112,7 @@
   "set.authEnable": "Povolit ověřování",
   "set.authUser": "Uživatelské jméno",
   "set.authPass": "Heslo",
-  "toast.auth": "Nastavení ověřování uloženo."
+  "toast.auth": "Nastavení ověřování uloženo.",
+  "hdr.authOff": "⚠ Ověřování vypnuto — kdokoli v síti může ovládat čerpadlo",
+  "set.passKeep": "(beze změny)"
 }

@@ -112,5 +112,7 @@
   "set.authEnable": "Aktiver autentisering",
   "set.authUser": "Brukernavn",
   "set.authPass": "Passord",
-  "toast.auth": "Autentiseringsinnstillinger lagret."
+  "toast.auth": "Autentiseringsinnstillinger lagret.",
+  "hdr.authOff": "⚠ Autentisering av — alle på nettverket kan styre pumpen",
+  "set.passKeep": "(uendret)"
 }

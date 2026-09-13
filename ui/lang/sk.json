@@ -112,5 +112,7 @@
   "set.authEnable": "Povoliť overenie",
   "set.authUser": "Používateľské meno",
   "set.authPass": "Heslo",
-  "toast.auth": "Nastavenia overenia uložené."
+  "toast.auth": "Nastavenia overenia uložené.",
+  "hdr.authOff": "⚠ Overenie vypnuté — ktokoľvek v sieti môže ovládať čerpadlo",
+  "set.passKeep": "(bez zmeny)"
 }

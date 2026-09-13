@@ -112,5 +112,7 @@
   "set.authEnable": "Authenticatie inschakelen",
   "set.authUser": "Gebruikersnaam",
   "set.authPass": "Wachtwoord",
-  "toast.auth": "Authenticatie-instellingen opgeslagen."
+  "toast.auth": "Authenticatie-instellingen opgeslagen.",
+  "hdr.authOff": "⚠ Authenticatie uit — iedereen in je netwerk kan de pomp bedienen",
+  "set.passKeep": "(ongewijzigd)"
 }

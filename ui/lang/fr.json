@@ -112,5 +112,7 @@
   "set.authEnable": "Activer l'authentification",
   "set.authUser": "Identifiant",
   "set.authPass": "Mot de passe",
-  "toast.auth": "Parametres d'authentification sauvegardes."
+  "toast.auth": "Parametres d'authentification sauvegardes.",
+  "hdr.authOff": "⚠ Authentification désactivée — n’importe qui sur le réseau peut piloter la pompe",
+  "set.passKeep": "(inchangé)"
 }

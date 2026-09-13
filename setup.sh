@@ -3,22 +3,23 @@
 #
 # Run on a freshly flashed Pi (or to update an existing install):
 #   bash <(wget -qO- https://raw.githubusercontent.com/JustChr/nibepi/master/setup.sh)
+#
+# This prepares the OS (filesystem, UART, hostname, Node.js) and fetches the
+# release; installing the app itself is patches/install.sh, the same script the
+# updater in the web UI runs.
 
 set -e
 
 # Resolve latest GitHub release; fall back to master if API is unreachable
 _TAG=$(wget -qO- https://api.github.com/repos/JustChr/nibepi/releases/latest \
        | grep '"tag_name"' | sed 's/.*"tag_name": *"\([^"]*\)".*/\1/' | head -1)
-if [ -n "$_TAG" ]; then
+if [[ "$_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     REPO_URL="https://github.com/JustChr/nibepi/archive/refs/tags/${_TAG}.tar.gz"
     echo "  Using release ${_TAG}"
 else
     REPO_URL="https://github.com/JustChr/nibepi/archive/refs/heads/master.tar.gz"
     echo "  Could not resolve latest release, using master."
 fi
-REPO_DIR="/tmp/nibepi-master"
-INSTALL_DIR="/opt/nibepi"
-CONFIG_DIR="/etc/nibepi"
 
 # Bookworm moved the FAT boot partition to /boot/firmware; on Bullseye it is /boot.
 # Detect rather than hard-code so this works on both.
@@ -28,6 +29,10 @@ if [ -d /boot/firmware ]; then BOOT_DIR=/boot/firmware; else BOOT_DIR=/boot; fi
 # ARMv6 at all, so this is the ceiling on a Pi Zero W, not a preference.
 NODE_TARGET="v22.23.2"
 NODE_URL="https://unofficial-builds.nodejs.org/download/release/${NODE_TARGET}/node-${NODE_TARGET}-linux-armv6l.tar.xz"
+# From that release's SHASUMS256.txt. Pinned here, where it arrives from GitHub
+# rather than from the download server, so a tampered or truncated tarball is
+# refused instead of being unpacked into /usr/local as root. Update with NODE_TARGET.
+NODE_SHA256="ffc3ded26e63837d9ab7c3ab6da80e975de9594d57432ef0541237a46b080754"
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 step() { echo ""; echo "▸ $*"; }
@@ -40,7 +45,8 @@ echo "│          NibePi Setup               │"
 echo "└─────────────────────────────────────┘"
 
 sudo mount -o remount,rw /
-rm -f /tmp/nibepi-reboot-needed
+# May have been left by a root-run install.sh, which a plain rm cannot remove from sticky /tmp.
+sudo rm -f /tmp/nibepi-reboot-needed
 
 # ── 1. Expand filesystem ──────────────────────────────────────────────────────
 step "Expanding filesystem to full card size..."
@@ -86,7 +92,7 @@ else
     skip "Serial console (already disabled)"
 fi
 
-# ── 3. Node.js 18 ─────────────────────────────────────────────────────────────
+# ── 3. Node.js ────────────────────────────────────────────────────────────────
 step "Checking Node.js..."
 CURRENT_NODE=$(/usr/local/bin/node --version 2>/dev/null || echo "none")
 if [ "$CURRENT_NODE" = "$NODE_TARGET" ]; then
@@ -94,6 +100,11 @@ if [ "$CURRENT_NODE" = "$NODE_TARGET" ]; then
 else
     echo "  Installing Node.js $NODE_TARGET (current: $CURRENT_NODE)..."
     wget -q --show-progress -O /tmp/node.tar.xz "$NODE_URL"
+    if ! echo "$NODE_SHA256  /tmp/node.tar.xz" | sha256sum -c --quiet -; then
+        rm -f /tmp/node.tar.xz
+        echo "  ✗ Node.js download does not match its pinned checksum — refusing to install it."
+        exit 1
+    fi
     tar -xf /tmp/node.tar.xz -C /tmp/
     sudo cp -r /tmp/node-${NODE_TARGET}-linux-armv6l/bin/* /usr/local/bin/
     sudo cp -r /tmp/node-${NODE_TARGET}-linux-armv6l/lib/* /usr/local/lib/
@@ -118,75 +129,18 @@ else
     ok "Downloaded."
 fi
 
-# ── 5. Install app files ───────────────────────────────────────────────────────
-step "Installing to $INSTALL_DIR..."
-sudo mkdir -p "$INSTALL_DIR"
-sudo chown pi:pi "$INSTALL_DIR"
-cp    "$REPO_DIR/bridge.js"    "$INSTALL_DIR/"
-cp    "$REPO_DIR/backend.js"   "$INSTALL_DIR/"
-cp    "$REPO_DIR/package.json" "$INSTALL_DIR/"
-cp -r "$REPO_DIR/ui"           "$INSTALL_DIR/"
-cp -r "$REPO_DIR/lib"          "$INSTALL_DIR/"
-cp -r "$REPO_DIR/models"       "$INSTALL_DIR/"
-ok "Files installed."
+# ── 5. Install ─────────────────────────────────────────────────────────────────
+# Service account, app files, npm dependencies, systemd units, sudo rules and
+# hardening. No restart: step 7 decides between restart and reboot.
+sudo bash "$REPO_DIR/patches/install.sh" "$REPO_DIR"
 
-# ── 6. npm install ─────────────────────────────────────────────────────────────
-# Skip if node_modules is present and package.json hasn't changed.
-PKG_HASH=$(md5sum "$INSTALL_DIR/package.json" | cut -d' ' -f1)
-HASH_FILE="$INSTALL_DIR/node_modules/.nibepi_pkg_hash"
-CACHED_HASH=$(cat "$HASH_FILE" 2>/dev/null || echo "")
-
-if [ "$PKG_HASH" = "$CACHED_HASH" ] && [ -d "$INSTALL_DIR/node_modules/serialport" ]; then
-    skip "npm dependencies (package.json unchanged)"
-else
-    step "Installing npm dependencies (~6 min on Pi Zero W)..."
-    SWAP_CREATED=0
-    # Trixie ships dphys-swapfile enabled, so only add our own if there is no
-    # active swap at all — otherwise we'd stack a second file on the SD card.
-    if [ -z "$(swapon --show --noheadings 2>/dev/null)" ]; then
-        echo "  Adding 512 MB swap for compilation..."
-        sudo fallocate -l 512M /swapfile
-        sudo chmod 600 /swapfile
-        sudo mkswap /swapfile
-        sudo swapon /swapfile
-        SWAP_CREATED=1
-    fi
-
-    cd "$INSTALL_DIR" && /usr/local/bin/npm install
-
-    if [ "$SWAP_CREATED" = "1" ]; then
-        sudo swapoff /swapfile && sudo rm /swapfile
-        ok "Swap removed."
-    fi
-
-    echo "$PKG_HASH" > "$HASH_FILE"
-    ok "npm dependencies installed."
-fi
-
-# ── 7. Config directory ────────────────────────────────────────────────────────
-step "Setting up config directory..."
-sudo mkdir -p "$CONFIG_DIR"
-sudo chown pi:pi "$CONFIG_DIR"
-ok "$CONFIG_DIR ready."
-
-# ── 8. Systemd service ─────────────────────────────────────────────────────────
-step "Installing systemd service..."
-sudo cp "$REPO_DIR/patches/bridge.service" /etc/systemd/system/bridge.service
-sudo systemctl daemon-reload
-sudo systemctl enable bridge
-ok "bridge.service enabled."
-
-# ── 9. Harden ──────────────────────────────────────────────────────────────────
-step "Applying hardening..."
-bash "$REPO_DIR/patches/harden.sh"
-
-# ── 10. Cleanup ────────────────────────────────────────────────────────────────
+# ── 6. Cleanup ─────────────────────────────────────────────────────────────────
 # Never delete a caller-supplied local source tree.
 [ -n "$NIBEPI_LOCAL_SRC" ] || rm -rf /tmp/nibepi-src
 
-# ── 11. Start or reboot ────────────────────────────────────────────────────────
+# ── 7. Start or reboot ────────────────────────────────────────────────────────
 if [ -f /tmp/nibepi-reboot-needed ]; then
-    rm -f /tmp/nibepi-reboot-needed
+    sudo rm -f /tmp/nibepi-reboot-needed
     echo ""
     echo "┌─────────────────────────────────────┐"
     echo "│  Done! Rebooting in 5 seconds...    │"

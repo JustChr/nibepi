@@ -4,7 +4,7 @@
   },
   "bundleDependencies": false,
   "dependencies": {
-    "mqtt": "^3.0.0",
+    "mqtt": "^5.15.2",
     "serialport": "10.5.0"
   },
   "deprecated": false,
@@ -19,5 +19,5 @@
   "scripts": {
     "start": "node bridge.js"
   },
-  "version": "1.7.2"
+  "version": "1.8.0"
 }

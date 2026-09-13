@@ -112,5 +112,7 @@
   "set.authEnable": "Wlacz uwierzytelnianie",
   "set.authUser": "Nazwa uzytkownika",
   "set.authPass": "Haslo",
-  "toast.auth": "Ustawienia uwierzytelniania zapisane."
+  "toast.auth": "Ustawienia uwierzytelniania zapisane.",
+  "hdr.authOff": "⚠ Uwierzytelnianie wyłączone — każdy w sieci może sterować pompą",
+  "set.passKeep": "(bez zmian)"
 }

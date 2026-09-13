@@ -6,7 +6,9 @@
 const fs   = require('fs');
 const path = require('path');
 const http = require('http');
-const { fork, exec: cpExec } = require('child_process');
+const crypto = require('crypto');
+const net    = require('net');
+const { fork, execFile, exec: cpExec } = require('child_process');
 const { EventEmitter } = require('events');
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -58,8 +60,14 @@ let config = (() => {
     catch { return JSON.parse(JSON.stringify(DEFAULT_CONFIG)); }
 })();
 
+// JSON.parse turns "__proto__" into an ordinary own key, so a request body
+// carrying one used to walk straight into Object.prototype: {"__proto__":
+// {"enable":true}} set `enable` on every object in the process.
+const UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
 function deepMerge(target, source) {
     for (const k of Object.keys(source)) {
+        if (UNSAFE_KEYS.has(k)) continue;
         if (source[k] && typeof source[k] === 'object' && !Array.isArray(source[k])) {
             if (!target[k] || typeof target[k] !== 'object') target[k] = {};
             deepMerge(target[k], source[k]);
@@ -68,6 +76,128 @@ function deepMerge(target, source) {
         }
     }
     return target;
+}
+
+// ── Secrets ───────────────────────────────────────────────────────────────────
+// The web login password is kept only as a scrypt hash. The MQTT password
+// cannot be — the bridge has to present it to the broker — so it stays in
+// config.json but, like the hash, never leaves through the API except in the
+// explicit backup export.
+const SCRYPT_N    = 1 << 14;
+// N is stored with the hash and scrypt's memory grows with it, so only sane
+// powers of two are accepted: a restored backup naming N = 2^24 would otherwise
+// have the Pi try to allocate gigabytes on the next login.
+const HASH_FORMAT = /^scrypt\$(1024|2048|4096|8192|16384|32768|65536)\$([A-Za-z0-9+/]+=*)\$([A-Za-z0-9+/]+=*)$/;
+const scryptOpts  = N => ({ N, r: 8, p: 1, maxmem: 128 * N * 8 * 2 });
+
+function hashPassword(pass) {
+    const salt = crypto.randomBytes(16);
+    const key  = crypto.scryptSync(String(pass), salt, 32, scryptOpts(SCRYPT_N));
+    return `scrypt$${SCRYPT_N}$${salt.toString('base64')}$${key.toString('base64')}`;
+}
+
+function verifyPassword(pass, stored) {
+    return new Promise(resolve => {
+        const m = HASH_FORMAT.exec(stored || '');
+        if (!m) return resolve(false);
+        const N    = Number(m[1]);
+        const want = Buffer.from(m[3], 'base64');
+        crypto.scrypt(String(pass), Buffer.from(m[2], 'base64'), want.length, scryptOpts(N), (err, key) =>
+            resolve(!err && crypto.timingSafeEqual(key, want)));
+    });
+}
+
+// Basic Auth resends the credentials with every request, and a page load makes
+// dozens, so a header that verified once is remembered (by digest, never in
+// clear) instead of paying scrypt each time. The stored hash is part of the
+// digest, so changing the password retires every remembered header at once.
+const AUTH_CACHE_MS = 12 * 3600 * 1000;
+const authCache     = new Map();   // digest → expiry
+let authVerifying   = null;        // one scrypt at a time
+let authFailUntil   = 0;           // no new attempt before this after a failure
+
+/** On a single-core Pi Zero scrypt competes with the serial backend for the
+ *  CPU, so wrong guesses are throttled to one a second. A browser that already
+ *  logged in stays served from the cache while that throttle is active. */
+async function checkBasicAuth(hdr, authCfg) {
+    if (!authCfg.user || !authCfg.hash || !hdr.startsWith('Basic ')) return false;
+    const digest = crypto.createHash('sha256').update(`${authCfg.hash}\0${hdr}`).digest('base64');
+    for (;;) {
+        const exp = authCache.get(digest);
+        if (exp && exp > Date.now()) return true;
+        if (Date.now() < authFailUntil) return false;
+        if (!authVerifying) break;
+        await authVerifying;
+    }
+    const decoded = Buffer.from(hdr.slice(6), 'base64').toString('utf8');
+    const colon   = decoded.indexOf(':');
+    if (colon === -1) return false;
+    // scrypt runs whether or not the user name matched, so a wrong name
+    // answers no faster than a wrong password.
+    const userOk = safeEqual(decoded.slice(0, colon), authCfg.user);
+    authVerifying = verifyPassword(decoded.slice(colon + 1), authCfg.hash);
+    let passOk;
+    try { passOk = await authVerifying; } finally { authVerifying = null; }
+    if (userOk && passOk) {
+        if (authCache.size >= 32) authCache.clear();
+        authCache.set(digest, Date.now() + AUTH_CACHE_MS);
+        return true;
+    }
+    authFailUntil = Date.now() + 1000;
+    return false;
+}
+
+/** Config as the API shows it: each secret replaced by whether one is set. */
+function publicConfig() {
+    const c = JSON.parse(JSON.stringify(config));
+    if (c.auth) { c.auth.hasPass = !!c.auth.hash; delete c.auth.hash; delete c.auth.pass; }
+    if (c.mqtt) { c.mqtt.hasPass = !!c.mqtt.pass; c.mqtt.pass = ''; }
+    return c;
+}
+
+/** Merge a settings change from the API into config, applying the rules for
+ *  secrets the UI never gets to see. Returns an error message, or null once
+ *  merged. `fromImport` accepts a stored hash, which only a backup carries. */
+function applyConfigPatch(body, { fromImport = false } = {}) {
+    if (!body || typeof body !== 'object' || Array.isArray(body)) return 'Expected a JSON object';
+
+    const a = body.auth;
+    if (a && typeof a === 'object') {
+        if (typeof a.pass === 'string' && a.pass !== '') {
+            a.hash = hashPassword(a.pass);
+        } else if (!(fromImport && typeof a.hash === 'string' && HASH_FORMAT.test(a.hash))) {
+            delete a.hash;   // an empty field means "unchanged"; a hash is never taken from the UI
+        }
+        delete a.pass;
+        delete a.hasPass;
+        const next = { ...(config.auth || {}), ...a };
+        // Enabling auth with no complete credentials would lock everyone out
+        // for good — the only way back would be editing config.json over SSH.
+        if (next.enable && (!next.user || !next.hash)) return 'Authentication needs a username and a password';
+    }
+
+    const m = body.mqtt;
+    if (m && typeof m === 'object') {
+        delete m.hasPass;
+        // Same rule: the stored password is never sent to the UI, so an empty
+        // field keeps it. Clearing the username clears it for real — MQTT has
+        // no password without a username.
+        const user = m.user !== undefined ? m.user : (config.mqtt || {}).user;
+        if (!user) m.pass = '';
+        else if (m.pass === '' || m.pass === undefined) delete m.pass;
+    }
+
+    deepMerge(config, body);
+    return null;
+}
+
+/** Configs written before 1.8.0 keep the web password in clear text. */
+function migrateSecrets() {
+    const a = config.auth;
+    if (!a || !('pass' in a)) return false;
+    if (a.pass && !a.hash) a.hash = hashPassword(a.pass);
+    delete a.pass;
+    return true;
 }
 
 let saveTimer;
@@ -82,12 +212,12 @@ function persistConfig(cb) {
         if (err) { log('error', `Config save failed: ${err.message}`); return cb && cb(err); }
         log('info', 'Config saved.');
         if (config.system && config.system.readonly) {
-            cpExec('sudo mount -o remount,ro /', () => cb && cb(null));
+            cpExec('sudo -n mount -o remount,ro /', () => cb && cb(null));
         } else {
             cb && cb(null);
         }
     });
-    cpExec('sudo mount -o remount,rw /', err => {
+    cpExec('sudo -n mount -o remount,rw /', err => {
         if (err) fs.writeFile(CONFIG_FILE, data, err2 => cb && cb(err2 || null));
         else write();
     });
@@ -120,6 +250,10 @@ function log(level, msg) {
 
 // ── SSE helpers ───────────────────────────────────────────────────────────────
 const eventSseClients = new Set();
+// Each stream holds a socket and a slot in every broadcast for as long as it
+// stays open. A few browser tabs is normal; hundreds is someone exhausting a
+// Pi Zero on purpose.
+const MAX_SSE_CLIENTS = 16;
 
 function sendSse(res, event, data) {
     try { res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`); } catch {}
@@ -455,23 +589,54 @@ function publishMqtt(topic, payload, retain = false) {
     }
 }
 
-function handleMqttSet(address, value) {
-    const reg = regMap[address];
-    if (!reg) { log('error', `MQTT set: unknown register ${address}`); return; }
-    if (reg.mode !== 'R/W') { log('error', `MQTT set: register ${address} is read-only`); return; }
+const SIZE_BOUNDS = {
+    u8:  [0, 255],           s8:  [-128, 127],
+    u16: [0, 65535],         s16: [-32768, 32767],
+    u32: [0, 4294967295],    s32: [-2147483648, 2147483647],
+};
 
+/** The raw integer to write for a requested value, or why it is refused.
+ *  These are the limits the web UI's editor has always applied — the listed
+ *  options of a state map, else the model's min/max, else the register type's
+ *  range — enforced here because MQTT and plain HTTP clients never went
+ *  through that editor and could put any number on the bus. */
+function rawWriteValue(reg, value) {
+    const text  = String(value).trim();
+    const shown = text.length > 40 ? text.slice(0, 40) + '…' : text;
     const stateMap = parseStateMap(reg.info);
-    let numValue;
     if (stateMap) {
-        const entry = Object.entries(stateMap).find(([, v]) => v === value);
-        numValue = entry ? parseInt(entry[0]) : parseInt(value);
-    } else {
-        numValue = Math.round(parseFloat(value) * (Number(reg.factor) || 1));
+        const entry = Object.entries(stateMap).find(([, label]) => label === text);
+        const key   = entry ? entry[0] : text;
+        if (!/^\d+$/.test(key) || !(key in stateMap)) {
+            return { error: `'${shown}' is not an option (${Object.entries(stateMap).map(([k, v]) => `${k}=${v}`).join(', ')})` };
+        }
+        return { raw: Number(key) };
     }
-    if (isNaN(numValue)) { log('error', `MQTT set: invalid value '${value}' for register ${address}`); return; }
+    if (!/^-?\d+(\.\d+)?$/.test(text)) return { error: `'${shown}' is not a number` };
+    const factor = Number(reg.factor) || 1;
+    const raw    = Math.round(Number(text) * factor);
+    let lo = Number(reg.min);
+    let hi = Number(reg.max);
+    // 0/0 means the model gives no range. Min above max (or missing) is a
+    // broken model entry; the type range is the only honest limit for either.
+    if ((lo === 0 && hi === 0) || !(lo <= hi)) [lo, hi] = SIZE_BOUNDS[reg.size] || [-Infinity, Infinity];
+    if (raw < lo || raw > hi) return { error: `${shown} is outside ${lo / factor} … ${hi / factor}` };
+    return { raw };
+}
 
-    log('info', `Set register ${address} (${reg.titel}) = ${numValue} raw`);
-    if (core && core.connected) core.send({ type: 'setData', data: buildWriteFrame(address, numValue) });
+/** Write a register from MQTT or the HTTP API. Returns an error message, or
+ *  null once the write is queued. */
+function handleMqttSet(address, value) {
+    const refuse = msg => { log('error', `Set register ${address} refused: ${msg}`); return msg; };
+    const reg = regMap[address];
+    if (!reg) return refuse('unknown register');
+    if (reg.mode !== 'R/W') return refuse('register is read-only');
+    const { raw, error } = rawWriteValue(reg, value);
+    if (error) return refuse(error);
+
+    log('info', `Set register ${address} (${reg.titel}) = ${raw} raw`);
+    if (core && core.connected) core.send({ type: 'setData', data: buildWriteFrame(address, raw) });
+    return null;
 }
 
 // ── HA MQTT Discovery ─────────────────────────────────────────────────────────
@@ -627,6 +792,7 @@ function getStatus() {
         canReset:             alarmResetAddr !== null && alarmValue !== 0,
         updateAvailable:      !!(_cachedRelease && _cachedRelease.newer),
         latestVersion:        (_cachedRelease && _cachedRelease.newer) ? _cachedRelease.latest : null,
+        authEnabled:          !!(config.auth && config.auth.enable),
     };
 }
 
@@ -639,6 +805,50 @@ function readBody(req) {
     });
 }
 
+/** True when a browser reports the request as coming from another site.
+ *  Sec-Fetch-Site is the browser's own verdict and survives a reverse proxy that
+ *  rewrites Host; Origin is the fallback for browsers without it. Requests with
+ *  neither come from curl and the like, which are not a cross-site vector. */
+function isCrossSite(req) {
+    const site = req.headers['sec-fetch-site'];
+    if (site) return site !== 'same-origin' && site !== 'none';
+    const origin = req.headers.origin;
+    if (!origin) return false;
+    try   { return new URL(origin).host !== req.headers.host; }
+    catch { return true; }   // "null" from sandboxed frames, or garbage
+}
+
+/** Compare without leaking, through timing, how much of a guess was right.
+ *  Hashing first gives timingSafeEqual the equal lengths it insists on. */
+function safeEqual(a, b) {
+    const ha = crypto.createHash('sha256').update(String(a)).digest();
+    const hb = crypto.createHash('sha256').update(String(b)).digest();
+    return crypto.timingSafeEqual(ha, hb);
+}
+
+// A web page can point a host name of its own at the Pi's LAN address (DNS
+// rebinding) and then reach the API as if it were same-origin, which walks
+// straight past the cross-site check. Its requests still carry that foreign
+// name in Host, so while authentication is off only names that can belong to
+// this network are served. With authentication on the rebound page has no
+// credentials, so there is nothing left to guard. An IP address always works.
+const LOCAL_SUFFIXES = ['.local', '.lan', '.home', '.home.arpa', '.internal', '.localdomain', '.fritz.box'];
+
+function isLocalHost(hostHeader) {
+    if (!hostHeader) return true;   // HTTP/1.0 tools; every browser sends Host
+    const h = String(hostHeader).toLowerCase();
+    if (h.startsWith('[')) return net.isIPv6(h.slice(1, h.indexOf(']')));
+    const host = h.replace(/:\d+$/, '').replace(/\.$/, '');
+    if (net.isIP(host) || !host.includes('.')) return true;   // 10.0.0.81, nibepi, localhost
+    if (LOCAL_SUFFIXES.some(s => host.endsWith(s))) return true;
+    const extra = config.http && config.http.allowedHosts;
+    return Array.isArray(extra) && extra.some(e => String(e).toLowerCase() === host);
+}
+
+// Before setup has run no credentials exist, so nothing can be protected yet;
+// until then only what the wizard itself calls is served.
+const SETUP_API = new Set(['/api/serial-ports', '/api/models', '/api/setup/complete']);
+
 function respond(res, status, data) {
     const body = typeof data === 'string' ? data : JSON.stringify(data);
     res.writeHead(status, { 'Content-Type': 'application/json' });
@@ -650,10 +860,33 @@ const server = http.createServer(async (req, res) => {
     const urlObj   = new URL(req.url, 'http://localhost');
     const pathname = urlObj.pathname;
 
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
+    // No CORS headers. Only the UI served from this origin talks to the API;
+    // `Access-Control-Allow-Origin: *` let any web page opened in a browser on
+    // the LAN read the config, passwords included, straight off the Pi.
+
+    // ── Cross-site request refusal ────────────────────────────────────────────
+    // Without CORS another site can still *send* a POST here: a form or a
+    // no-cors fetch needs no preflight, and readBody parses the body whatever
+    // its Content-Type. That was enough to change pump settings from any page
+    // someone on the LAN happened to visit.
+    if (req.method !== 'GET' && req.method !== 'HEAD' && isCrossSite(req)) {
+        respond(res, 403, { error: 'Cross-site request refused' });
+        return;
+    }
 
     // ── First-time setup redirect ─────────────────────────────────────────────
+    if (!(config.auth && config.auth.enable) && !isLocalHost(req.headers.host)) {
+        res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end('NibePi does not answer to this host name while authentication is off. '
+              + 'Open it by IP address, or add the name to http.allowedHosts in /etc/nibepi/config.json.');
+        return;
+    }
+
+    if (!setupDone && pathname.startsWith('/api/') && !SETUP_API.has(pathname)) {
+        respond(res, 403, { error: 'Finish the setup wizard first' });
+        return;
+    }
+
     if (!setupDone && pathname !== '/setup' && !pathname.startsWith('/api/') && !pathname.startsWith('/lang/')) {
         res.writeHead(302, { Location: '/setup' });
         res.end();
@@ -663,19 +896,7 @@ const server = http.createServer(async (req, res) => {
     // ── HTTP Basic Auth ───────────────────────────────────────────────────────
     const authCfg = config.auth || {};
     if (authCfg.enable) {
-        const hdr = req.headers['authorization'] || '';
-        let ok = false;
-        if (hdr.startsWith('Basic ')) {
-            try {
-                const decoded = Buffer.from(hdr.slice(6), 'base64').toString('utf8');
-                const colon   = decoded.indexOf(':');
-                if (colon !== -1) {
-                    const u = decoded.slice(0, colon);
-                    const p = decoded.slice(colon + 1);
-                    ok = u === (authCfg.user || '') && p === (authCfg.pass || '') && !!authCfg.user;
-                }
-            } catch {}
-        }
+        const ok = await checkBasicAuth(req.headers['authorization'] || '', authCfg);
         if (!ok) {
             res.writeHead(401, { 'WWW-Authenticate': 'Basic realm="NibePi"' });
             res.end('Unauthorized');
@@ -690,7 +911,9 @@ const server = http.createServer(async (req, res) => {
             : pathname === '/setup'
                 ? path.join(UI_DIR, 'setup.html')
                 : path.join(UI_DIR, pathname);
-        if (!filePath.startsWith(UI_DIR)) { res.writeHead(403); res.end(); return; }
+        // The separator matters: a bare prefix test would also admit a sibling
+        // such as /opt/nibepi/ui-old.
+        if (!filePath.startsWith(UI_DIR + path.sep)) { res.writeHead(403); res.end(); return; }
         fs.readFile(filePath, (err, data) => {
             if (err) { res.writeHead(404); res.end('Not found'); return; }
             const ct = MIME[path.extname(filePath)] || 'application/octet-stream';
@@ -704,6 +927,7 @@ const server = http.createServer(async (req, res) => {
 
     // ── SSE: live register values + status ────────────────────────────────────
     if (pathname === '/api/events') {
+        if (eventSseClients.size >= MAX_SSE_CLIENTS) { respond(res, 503, { error: 'Too many live connections' }); return; }
         res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' });
         res.write(':\n\n');
         eventSseClients.add(res);
@@ -714,6 +938,7 @@ const server = http.createServer(async (req, res) => {
 
     // ── SSE: log stream ───────────────────────────────────────────────────────
     if (pathname === '/api/logs') {
+        if (logSseClients.size >= MAX_SSE_CLIENTS) { respond(res, 503, { error: 'Too many live connections' }); return; }
         res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' });
         res.write(':\n\n');
         logSseClients.add(res);
@@ -725,8 +950,11 @@ const server = http.createServer(async (req, res) => {
     // ── REST API ──────────────────────────────────────────────────────────────
     try {
         if (pathname === '/api/setup/complete' && req.method === 'POST') {
+            // The wizard runs once; afterwards settings change through /api/config.
+            if (setupDone) { respond(res, 409, { error: 'Setup has already been completed' }); return; }
             const body = await readBody(req);
-            deepMerge(config, body);
+            const err  = applyConfigPatch(body);
+            if (err) { respond(res, 400, { error: err }); return; }
             setupDone = true;
             persistConfig(err => {
                 if (err) { respond(res, 500, { error: err.message }); return; }
@@ -748,9 +976,11 @@ const server = http.createServer(async (req, res) => {
             respond(res, 200, alarmHistory);
 
         } else if (pathname === '/api/config' && req.method === 'GET') {
-            respond(res, 200, config);
+            respond(res, 200, publicConfig());
 
         } else if (pathname === '/api/config/export' && req.method === 'GET') {
+            // The one place secrets leave in full — the MQTT password and the
+            // login hash — because a restore has to bring them back.
             const data = JSON.stringify(config, null, 2);
             res.writeHead(200, {
                 'Content-Type': 'application/json',
@@ -760,7 +990,8 @@ const server = http.createServer(async (req, res) => {
 
         } else if (pathname === '/api/config/import' && req.method === 'POST') {
             const body = await readBody(req);
-            deepMerge(config, body);
+            const err  = applyConfigPatch(body, { fromImport: true });
+            if (err) { respond(res, 400, { error: err }); return; }
             scheduleConfigSave();
             if (config.mqtt && config.mqtt.enable) startMqtt();
             respond(res, 200, { ok: true });
@@ -768,7 +999,8 @@ const server = http.createServer(async (req, res) => {
         } else if (pathname === '/api/config' && req.method === 'POST') {
             const body = await readBody(req);
             const prevMqttEnable = config.mqtt && config.mqtt.enable;
-            deepMerge(config, body);
+            const err = applyConfigPatch(body);
+            if (err) { respond(res, 400, { error: err }); return; }
             scheduleConfigSave();
             const newMqttEnable = config.mqtt && config.mqtt.enable;
             if (newMqttEnable && (!mqttConnected || !prevMqttEnable)) startMqtt();
@@ -815,7 +1047,8 @@ const server = http.createServer(async (req, res) => {
             if (!reg)                          { respond(res, 404, { error: `Unknown register ${addr}` }); return; }
             if (reg.mode !== 'R/W')            { respond(res, 400, { error: 'Register is read-only' }); return; }
             if (!core || !core.connected)      { respond(res, 409, { error: 'Pump not connected' }); return; }
-            handleMqttSet(Number(addr), String(value));
+            const err = handleMqttSet(Number(addr), String(value));
+            if (err) { respond(res, 400, { error: err }); return; }
             respond(res, 200, { ok: true });
 
         } else if (pathname === '/api/alarm/reset' && req.method === 'POST') {
@@ -849,7 +1082,7 @@ const server = http.createServer(async (req, res) => {
             respond(res, 200, { ok: true });
             log('info', 'Restart requested via UI.');
             setTimeout(() => {
-                cpExec('sudo systemctl restart bridge', err => {
+                cpExec('sudo -n systemctl restart bridge', err => {
                     if (err) { log('warn', 'systemctl failed, using process.exit(0)'); process.exit(0); }
                 });
             }, 500);
@@ -862,7 +1095,7 @@ const server = http.createServer(async (req, res) => {
 
         } else if (pathname === '/api/fsmode' && req.method === 'POST') {
             const { readonly } = await readBody(req);
-            const cmd = readonly ? 'sudo mount -o remount,ro /' : 'sudo mount -o remount,rw /';
+            const cmd = readonly ? 'sudo -n mount -o remount,ro /' : 'sudo -n mount -o remount,rw /';
             cpExec(cmd, err => {
                 if (err) { respond(res, 500, { error: err.message }); return; }
                 if (!config.system) config.system = {};
@@ -929,7 +1162,15 @@ const server = http.createServer(async (req, res) => {
                 const mqttLib = require('mqtt');
                 const url = `mqtt://${body.host}:${body.port || 1883}`;
                 const opts = { connectTimeout: 5000, reconnectPeriod: 0 };
-                if (body.user) { opts.username = body.user; opts.password = body.pass || ''; }
+                // The UI never holds the stored password, so an empty field
+                // means the saved one — but only against the broker it was
+                // saved for, or this would hand it to any host a request names.
+                const saved = config.mqtt || {};
+                let pass = body.pass || '';
+                if (!pass && body.user && body.user === saved.user && String(body.host) === String(saved.host)) {
+                    pass = saved.pass || '';
+                }
+                if (body.user) { opts.username = body.user; opts.password = pass; }
                 const tc = mqttLib.connect(url, opts);
                 let done = false;
                 const finish = (ok, msg) => { if (done) return; done = true; tc.end(true); respond(res, 200, { ok, error: msg }); };
@@ -952,44 +1193,41 @@ const server = http.createServer(async (req, res) => {
             }, true);
 
         } else if (pathname === '/api/update' && req.method === 'POST') {
-            const { url, version: nextVer } = await readBody(req);
-            if (!url) { respond(res, 400, { error: 'Missing url' }); return; }
-            respond(res, 200, { ok: true });
-            log('info', `OTA update to ${nextVer || '?'} from ${url}`);
-            const script = [
-                'set -e',
-                'sudo mount -o remount,rw /',
-                'rm -rf /tmp/nibepi-ota /tmp/nibepi-ota.tar.gz',
-                `wget -qO /tmp/nibepi-ota.tar.gz "${url}"`,
-                'mkdir -p /tmp/nibepi-ota',
-                'tar -xf /tmp/nibepi-ota.tar.gz -C /tmp/nibepi-ota --strip-components=1',
-                'D=/tmp/nibepi-ota',
-                'cp "$D/bridge.js"    /opt/nibepi/bridge.js',
-                'cp "$D/backend.js"   /opt/nibepi/backend.js',
-                'cp "$D/package.json" /opt/nibepi/package.json',
-                'sudo chmod -R u+w /opt/nibepi/ui /opt/nibepi/lib /opt/nibepi/models 2>/dev/null || true',
-                'sudo rm -rf /opt/nibepi/ui /opt/nibepi/lib /opt/nibepi/models',
-                'sudo cp -r "$D/ui"        /opt/nibepi/ui',
-                'sudo cp -r "$D/lib"       /opt/nibepi/lib',
-                'sudo cp -r "$D/models"    /opt/nibepi/models',
-                'sudo cp "$D/patches/bridge.service" /etc/systemd/system/bridge.service',
-                // Cleanup steps are best-effort — don't let them abort before the restart
-                'set +e',
-                // Apply hardening too. Without this the OTA path silently skips every
-                // change in patches/ (watchdogs, power save, time sync) while still
-                // bumping the version, which looks like a successful update but is not.
-                // harden.sh leaves the root fs ro, so it must run before the remount.
-                'bash "$D/patches/harden.sh" || echo "harden.sh failed (app update still applied)"',
-                'sudo systemctl daemon-reload',
-                'sudo mount -o remount,ro /',
-                'rm -rf /tmp/nibepi-ota /tmp/nibepi-ota.tar.gz',
-                'set -e',
-                'sudo systemctl restart bridge',
-            ].join('\n');
-            try { fs.unlinkSync('/tmp/nibepi-ota.sh'); } catch(e) {}
-            fs.writeFileSync('/tmp/nibepi-ota.sh', script, { mode: 0o755 });
-            // Detach so the script survives bridge.js being killed by systemctl restart
-            cpExec('nohup bash /tmp/nibepi-ota.sh > /tmp/nibepi-ota.log 2>&1 &');
+            // The bridge can only ask for "the latest release". Installing is
+            // nibepi-update.service's job: it runs as root, looks the release
+            // up itself and takes no input, so nothing in this request reaches
+            // a root shell. This route once took a download URL from the body
+            // and spliced it into one (issue #1). The version is compared only
+            // so that a release published after the user clicked is not
+            // installed unseen.
+            const body = await readBody(req).catch(() => null) || {};
+            checkLatestRelease((err, rel) => {
+                if (err) { respond(res, 502, { error: `Release check failed: ${err.message}` }); return; }
+                if (!RELEASE_TAG.test(rel.tag)) {
+                    respond(res, 502, { error: `Refusing release with unexpected tag '${rel.tag}'` });
+                    return;
+                }
+                if (body.version && body.version !== rel.latest) {
+                    respond(res, 409, { error: `Latest release is ${rel.latest}, not ${body.version}` });
+                    return;
+                }
+                execFile('systemctl', ['show', '--property=ActiveState', '--value', UPDATE_UNIT], (_, state) => {
+                    // A oneshot unit stays "activating" for as long as it runs.
+                    if (/^(activating|active)$/.test(String(state || '').trim())) {
+                        respond(res, 409, { error: 'An update is already running' });
+                        return;
+                    }
+                    execFile('sudo', ['-n', 'systemctl', 'start', '--no-block', UPDATE_UNIT], startErr => {
+                        if (startErr) {
+                            log('error', `Could not start ${UPDATE_UNIT}: ${String(startErr.message).trim()}`);
+                            respond(res, 500, { error: 'The updater is not installed. Run setup.sh once over SSH.' });
+                            return;
+                        }
+                        log('info', `Update to ${rel.latest} started; follow it with: journalctl -u ${UPDATE_UNIT} -f`);
+                        respond(res, 200, { ok: true, version: rel.latest });
+                    });
+                });
+            }, true);
 
         } else {
             respond(res, 404, { error: 'Not found' });
@@ -999,6 +1237,12 @@ const server = http.createServer(async (req, res) => {
         respond(res, 500, { error: e.message });
     }
 });
+
+// ── OTA update ────────────────────────────────────────────────────────────────
+// Release tags are plain semver. The updater refuses anything else on its own;
+// checking here too gives the UI a clear answer instead of a silent no-op.
+const RELEASE_TAG = /^v\d+\.\d+\.\d+$/;
+const UPDATE_UNIT = 'nibepi-update.service';
 
 // ── Ring buffer sampler ───────────────────────────────────────────────────────
 setInterval(() => {
@@ -1101,6 +1345,9 @@ function checkLatestRelease(cb, force) {
 if (!fs.existsSync('/etc/nibepi')) {
     try { fs.mkdirSync('/etc/nibepi', { recursive: true }); } catch {}
 }
+
+// Configs written before 1.8.0 hold the web password in clear text.
+if (migrateSecrets()) scheduleConfigSave();
 
 // HTTP first — accessible even while pump is offline
 server.listen(HTTP_PORT, () => log('info', `NibePi bridge on port ${HTTP_PORT}`));

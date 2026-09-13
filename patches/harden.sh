@@ -10,11 +10,29 @@
 set -e
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" 2>/dev/null && pwd)
-RAW_BASE="https://raw.githubusercontent.com/JustChr/nibepi/master/patches"
+
+# NibePi 1.7.2 and older update themselves with a script that copies the app
+# over as pi and then runs this file from /tmp/nibepi-ota. That script knows
+# nothing of the service account, sudo rules and root updater those releases
+# lack, so the whole job goes to install.sh instead — which also moves the
+# serial port over from the old pi-owned backend. The old script restarts
+# bridge once more afterwards; that second restart is an ordinary handover.
+if [ "$SCRIPT_DIR" = /tmp/nibepi-ota/patches ] && [ "$(id -u)" -ne 0 ] && [ -z "$NIBEPI_INSTALLING" ]; then
+    exec sudo bash "$SCRIPT_DIR/install.sh" /tmp/nibepi-ota
+fi
 
 # Bookworm moved the FAT boot partition to /boot/firmware; Bullseye used /boot.
 # Detect so this script works on both.
 if [ -d /boot/firmware ]; then BOOT_DIR=/boot/firmware; else BOOT_DIR=/boot; fi
+
+# Companion files for a standalone run come from the latest release, not master:
+# master can be ahead of anything released. Resolved only when first needed.
+raw_base() {
+    _tag=$(wget -qO- https://api.github.com/repos/JustChr/nibepi/releases/latest 2>/dev/null \
+           | grep '"tag_name"' | sed 's/.*"tag_name": *"\([^"]*\)".*/\1/' | head -1)
+    [[ "$_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || _tag=master
+    echo "https://raw.githubusercontent.com/JustChr/nibepi/$_tag/patches"
+}
 
 # Install a companion file from patches/. When harden.sh is run standalone via
 # `bash <(wget -qO- .../harden.sh)` there is no checkout to copy from, so fall
@@ -23,6 +41,7 @@ get_patch() {   # get_patch <name> <dest> <mode>
     if [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/$1" ]; then
         sudo install -m "$3" "$SCRIPT_DIR/$1" "$2"
     else
+        [ -n "$RAW_BASE" ] || RAW_BASE=$(raw_base)
         _t=$(mktemp)
         if wget -qO "$_t" "$RAW_BASE/$1"; then
             sudo install -m "$3" "$_t" "$2"
