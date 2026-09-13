@@ -136,11 +136,15 @@ sudo bash "$REPO_DIR/patches/install.sh" "$REPO_DIR"
 
 # ── 6. Cleanup ─────────────────────────────────────────────────────────────────
 # Never delete a caller-supplied local source tree.
-[ -n "$NIBEPI_LOCAL_SRC" ] || rm -rf /tmp/nibepi-src
+# Best effort, like the flag removal below: install.sh's hardening may already
+# have remounted / read-only, and before the first reboot /tmp still lives on
+# it rather than on a tmpfs. Failing here under set -e would skip the reboot
+# the fresh install needs.
+[ -n "$NIBEPI_LOCAL_SRC" ] || rm -rf /tmp/nibepi-src 2>/dev/null || true
 
 # ── 7. Start or reboot ────────────────────────────────────────────────────────
 if [ -f /tmp/nibepi-reboot-needed ]; then
-    sudo rm -f /tmp/nibepi-reboot-needed
+    sudo rm -f /tmp/nibepi-reboot-needed 2>/dev/null || true
     echo ""
     echo "┌─────────────────────────────────────┐"
     echo "│  Done! Rebooting in 5 seconds...    │"

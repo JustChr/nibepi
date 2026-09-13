@@ -70,13 +70,18 @@ sudo mount -o remount,rw /
 # un-hardens the root filesystem. Drop-ins have higher precedence and leave the
 # packaged file untouched.
 if [ -f /etc/rpi/swap.conf ]; then
-    sudo mkdir -p /etc/rpi/swap.conf.d
-    sudo tee /etc/rpi/swap.conf.d/99-nibepi-zram-only.conf > /dev/null << 'EOF'
-[Main]
-Mechanism=zram
-EOF
-    echo 'Swap mechanism set to zram-only (drop-in).'
-    touch /tmp/nibepi-reboot-needed
+    SWAP_DROPIN=/etc/rpi/swap.conf.d/99-nibepi-zram-only.conf
+    SWAP_WANT=$'[Main]\nMechanism=zram'
+    if [ "$(cat "$SWAP_DROPIN" 2>/dev/null)" = "$SWAP_WANT" ]; then
+        echo 'Swap already zram-only, skipping.'
+    else
+        sudo mkdir -p /etc/rpi/swap.conf.d
+        printf '%s\n' "$SWAP_WANT" | sudo tee "$SWAP_DROPIN" > /dev/null
+        echo 'Swap mechanism set to zram-only (drop-in).'
+        # Only a change needs the reboot. Flagging it on every run made every
+        # update end with "A reboot is required" and every setup.sh re-run reboot.
+        touch /tmp/nibepi-reboot-needed
+    fi
 fi
 
 # ── 1. Root filesystem read-only on boot ──────────────────────────────────────
