@@ -237,7 +237,7 @@ The reboot is rate-limited on purpose: it interrupts RS485 for ~30 s and cannot 
 upstream fault (router down, power cut). If a reboot did not help, staying up and
 serving the heat pump beats looping.
 
-Events are appended to **`/boot/nibepi-netwatch.log`** — with association state, BSSID
+Events are appended to **`nibepi-netwatch.log` on the boot partition** (`/boot/firmware/` on Bookworm and later, `/boot/` on Bullseye) — with association state, BSSID
 and signal level at the moment of failure. `/var/log` is tmpfs, so it is wiped by the
 very reboot that fixes the problem; `/boot` is a separate rw vfat mount that survives,
 and is only written on real incidents, so it costs nothing in SD wear.
@@ -478,7 +478,7 @@ sudo kill -USR2 <pid>
 journalctl -u bridge -n 50
 ```
 
-Check that `/usr/local/bin/node` exists and is v18:
+Check that `/usr/local/bin/node` exists and is v22:
 ```bash
 /usr/local/bin/node --version
 ```

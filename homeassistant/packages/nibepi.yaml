@@ -312,13 +312,15 @@ utility_meter:
 # The reset register (45171) is edge-triggered: the pump acts on the 0 → 1
 # transition, so writing 1 over MQTT does nothing once it is latched at 1.
 # NibePi's HTTP endpoint emits the edge correctly — use it, not the number entity.
-# If you enabled Basic Auth in the NibePi UI, add username/password below.
+# If authentication is on in the NibePi UI (the setup wizard's default since
+# 1.8.0), uncomment username/password below and use that web login, not the
+# Pi's SSH account.
 rest_command:
   nibe_reset_alarm:
     url: http://nibepi:1880/api/alarm/reset
     method: POST
     timeout: 15
-    # username: pi
+    # username: admin
     # password: !secret nibepi_password
 
 script:

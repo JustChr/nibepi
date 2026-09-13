@@ -285,8 +285,12 @@ homeassistant:
 ```
 
 If NibePi is not reachable at `http://nibepi:1880`, edit the `rest_command`
-URL in the package. If you enabled Basic Auth in the NibePi UI, uncomment the
-`username` / `password` lines there too.
+URL in the package. Since 1.8.0 the NibePi setup wizard turns authentication on
+by default; if it is on, uncomment the `username` / `password` lines there and
+fill in the NibePi web login (Settings → Authentication), not the Pi's SSH
+account. With authentication off, NibePi only answers to local host names and
+IP addresses, so a URL like `http://nibepi.example.net:1880` also needs
+`http.allowedHosts` (see the main README).
 
 Restart Home Assistant, then confirm **Developer Tools → Template** renders:
 
