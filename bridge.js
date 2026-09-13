@@ -1328,6 +1328,18 @@ setInterval(sampleMemory, MEM_INTERVAL);
 let _cachedRelease = null;
 let _cacheTime     = 0;
 
+/** True when version `a` is newer than `b` (plain x.y.z). `!==` alone offered
+ *  1.7.2 as an update to a box already running 1.8.0. */
+function isNewerVersion(a, b) {
+    const pa = String(a).split('.').map(Number);
+    const pb = String(b).split('.').map(Number);
+    for (let i = 0; i < 3; i++) {
+        const x = pa[i] || 0, y = pb[i] || 0;
+        if (x !== y) return x > y;
+    }
+    return false;
+}
+
 function checkLatestRelease(cb, force) {
     if (!force && _cachedRelease && Date.now() - _cacheTime < 3_600_000) {
         return cb(null, _cachedRelease);
@@ -1350,7 +1362,7 @@ function checkLatestRelease(cb, force) {
                     latest,
                     tag,
                     url:        rel.tarball_url || '',
-                    newer:      latest && latest !== VERSION,
+                    newer:      !!latest && isNewerVersion(latest, VERSION),
                 };
                 _cacheTime = Date.now();
                 cb(null, _cachedRelease);

@@ -823,7 +823,7 @@ $('btn-save-mqtt').addEventListener('click', async () => {
       tlsCaFile: $('mqtt-cafile').value.trim(),
     }
   });
-  if (!r.ok) { showToast(r.error || 'Error'); return; }
+  if (!r.ok) { showToast(r.error || 'Error', true); return; }
   // Mirror the bridge's rule: a typed password is now stored, an empty one kept,
   // and no username means no password at all.
   const passEl = $('mqtt-pass');
@@ -873,7 +873,7 @@ $('btn-save-auth').addEventListener('click', async () => {
       pass:   $('auth-pass').value.trim(),   // empty keeps the stored password
     }
   });
-  if (!r.ok) { showToast(r.error || 'Error'); return; }
+  if (!r.ok) { showToast(r.error || 'Error', true); return; }
   if ($('auth-pass').value.trim()) authHasPass = true;
   $('auth-pass').value = '';
   $('auth-pass').placeholder = authHasPass ? t('set.passKeep') : '';
@@ -1447,9 +1447,9 @@ function openWriteEditor(addr, triggerBtn) {
     const val = input.value;
     try {
       const r = await api('POST', '/register/set', { register: addr, value: val });
-      showToast(r.ok ? t('toast.regSet', addr) : (r.error || 'Error'));
+      showToast(r.ok ? t('toast.regSet', addr) : (r.error || 'Error'), !r.ok);
     } catch (e) {
-      showToast(e.message);
+      showToast(e.message, true);
     }
     cancel();
   };
@@ -1529,14 +1529,13 @@ $('btn-restart').addEventListener('click', async () => {
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
 let toastTimer;
-function showToast(msg) {
+function showToast(msg, isError = false) {
   let toast = $('toast');
   if (!toast) {
     toast = document.createElement('div');
     toast.id = 'toast';
     Object.assign(toast.style, {
       position: 'fixed', bottom: '24px', right: '24px',
-      background: 'var(--green)', color: '#0a2018',
       padding: '10px 18px', borderRadius: '6px',
       fontWeight: '600', fontSize: '13px', zIndex: '9999',
       transition: 'opacity .3s',
@@ -1544,6 +1543,9 @@ function showToast(msg) {
     document.body.appendChild(toast);
   }
   toast.textContent = msg;
+  // A refusal must not look like the green "saved" confirmation.
+  toast.style.background = isError ? 'var(--red)' : 'var(--green)';
+  toast.style.color      = isError ? '#fff' : '#0a2018';
   toast.style.opacity = '1';
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { toast.style.opacity = '0'; }, 2500);
