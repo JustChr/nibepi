@@ -1110,6 +1110,8 @@ async function loadMemChart() {
       const backendEl  = document.getElementById('mem-live-backend');
       if (bridgeEl)  bridgeEl.textContent  = `bridge ${toMB(c.bridge)} MB`;
       if (backendEl && c.backend > 0) backendEl.textContent = `backend ${toMB(c.backend)} MB`;
+      const heapEl = document.getElementById('mem-live-heap');
+      if (heapEl && c.heap > 0) heapEl.textContent = `bridge heap ${toMB(c.heap)} MB`;
     } catch {}
   }
 
@@ -1142,6 +1144,10 @@ async function loadMemChart() {
 
   const bridgePts  = pts.map(p => `${toX(p.t).toFixed(1)},${toY(p.bridge / 1048576).toFixed(1)}`).join(' ');
   const backendPts = pts.filter(p => p.backend > 0).map(p => `${toX(p.t).toFixed(1)},${toY(p.backend / 1048576).toFixed(1)}`).join(' ');
+  // The bridge's V8 heap, absent from older samples: a leak shows here as a line
+  // that keeps climbing, where RSS alone may just be the allocator settling.
+  const heapPts    = pts.filter(p => p.heap > 0).map(p => `${toX(p.t).toFixed(1)},${toY(p.heap / 1048576).toFixed(1)}`).join(' ');
+  const liveHeap   = cur && cur.heap > 0 ? toMB(cur.heap) : null;
 
   const liveBridge  = cur ? toMB(cur.bridge)  : toMB(pts[pts.length - 1].bridge);
   const liveBackend = cur && cur.backend > 0 ? toMB(cur.backend)
@@ -1159,6 +1165,7 @@ async function loadMemChart() {
     <div style="display:flex;gap:16px;font-size:11px;color:var(--muted);margin-bottom:6px">
       <span><span style="color:#4f8ef7">●</span> <span id="mem-live-bridge">bridge ${liveBridge} MB</span></span>
       ${liveBackend !== null ? `<span><span style="color:#94a3b8">●</span> <span id="mem-live-backend">backend ${liveBackend} MB</span></span>` : ''}
+      ${liveHeap !== null ? `<span><span style="color:#4f8ef7;opacity:.6">┄</span> <span id="mem-live-heap">bridge heap ${liveHeap} MB</span></span>` : ''}
       <span style="margin-left:auto">${pts.length} samples</span>
     </div>
     <svg id="mem-chart-svg" viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block" preserveAspectRatio="none">
@@ -1177,6 +1184,7 @@ async function loadMemChart() {
       <polygon points="${PAD_L},${H-PAD_V} ${bridgePts} ${toX(tMax).toFixed(1)},${H-PAD_V}" fill="url(#mg-bridge)"/>
       <polyline points="${bridgePts}"  fill="none" stroke="#4f8ef7" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>
       ${backendPts ? `<polyline points="${backendPts}" fill="none" stroke="#94a3b8" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="4,2"/>` : ''}
+      ${heapPts ? `<polyline points="${heapPts}" fill="none" stroke="#4f8ef7" stroke-opacity="0.6" stroke-width="1.2" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="1.5,2.5"/>` : ''}
     </svg>
     <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);padding:2px ${PAD_R}px 0 ${PAD_L}px">
       <span>${fmtAge(Date.now() - tMin)} ago</span>
@@ -1255,6 +1263,7 @@ async function loadMemChart() {
       dotBridge.style.display = '';
 
       let tipHtml = `<span style="color:#4f8ef7;font-weight:600">${bMB} MB</span> bridge`;
+      if (pt.heap > 0) tipHtml += `<br><span style="color:#4f8ef7;opacity:.75;font-weight:600">${toMBv(pt.heap)} MB</span> bridge heap`;
       if (hasBackend && pt.backend > 0) {
         const eMB = toMBv(pt.backend);
         dotBackend.setAttribute('cx', String(sx)); dotBackend.setAttribute('cy', String(toY(eMB)));

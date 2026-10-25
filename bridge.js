@@ -1199,8 +1199,8 @@ const server = http.createServer(async (req, res) => {
             }).catch(err => respond(res, 500, { error: err.message }));
 
         } else if (pathname === '/api/memhistory' && req.method === 'GET') {
-            const cur = { t: Date.now(), bridge: process.memoryUsage().rss, backend: backendRss() };
-            respond(res, 200, { history: memHistory, current: cur });
+            redateMemHistory();
+            respond(res, 200, { history: memHistory, current: memSample() });
 
         } else if (pathname === '/api/version' && req.method === 'GET') {
             respond(res, 200, { current: VERSION });
@@ -1316,8 +1316,34 @@ function backendRss() {
     } catch { return 0; }
 }
 
+// RSS alone cannot tell a leak from an allocator that keeps freed pages, so the
+// V8 heap rides along: heapUsed climbing for weeks is a leak, RSS levelling off
+// over a flat heap is not.
+function memSample() {
+    const m = process.memoryUsage();
+    return { t: Date.now(), bridge: m.rss, heap: m.heapUsed, backend: backendRss() };
+}
+
+// The Pi has no RTC and a read-only root, so it boots on a stale saved time and
+// timesync steps the clock afterwards — by months, at times. Samples taken
+// before the step are re-dated by it, measured against the monotonic clock;
+// otherwise the boot sample sits months back and the chart reads as months of
+// growth.
+let memLastWall = 0, memLastMono = 0;
+
+function redateMemHistory() {
+    const wall = Date.now(), mono = performance.now();
+    if (memLastWall) {
+        const skew = (wall - memLastWall) - (mono - memLastMono);
+        if (Math.abs(skew) > 60_000) for (const p of memHistory) p.t += skew;
+    }
+    memLastWall = wall;
+    memLastMono = mono;
+}
+
 function sampleMemory() {
-    memHistory.push({ t: Date.now(), bridge: process.memoryUsage().rss, backend: backendRss() });
+    redateMemHistory();
+    memHistory.push(memSample());
     if (memHistory.length > MEM_RING_SIZE) memHistory.shift();
 }
 
