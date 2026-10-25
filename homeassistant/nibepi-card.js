@@ -31,7 +31,7 @@
  *     node homeassistant/gen-alarms.js
  */
 
-const CARD_VERSION = '3.5.0';
+const CARD_VERSION = '3.5.1';
 
 // Card content width, in px, at which the landscape sheet takes over. The
 // landscape drawing is 1040 units wide, so below this it renders at under ~0.87×
@@ -1359,9 +1359,12 @@ class NibepiFlowCard extends HTMLElement {
 
         // ── prio: pill, diverter, dimming ───────────────────────────────────
         const prio = this._prio();
-        d.heating = prio === 30 || prio === 50;
+        // QN10 rests on the climate system and only swings to the tank for a hot
+        // water charge, so every priority but 20 — off, pool, cooling — leaves
+        // the heating side open. Only a missing priority leaves it unknown.
         d.hotwater = prio === 20;
-        d.known = prio !== null && (d.heating || d.hotwater);
+        d.heating = prio !== null && !d.hotwater;
+        d.known = prio !== null;
         const pill = $('pill');
         pill.textContent = prio !== null
             ? (t.prioMap[prio] || String(prio))

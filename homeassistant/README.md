@@ -306,7 +306,7 @@ cp nibepi-card.js /config/www/nibepi-card.js
 
 Register it under **Settings → Dashboards → ⋮ → Resources → Add resource**:
 
-- URL `/local/nibepi-card.js?v=3.5.0`
+- URL `/local/nibepi-card.js?v=3.5.1`
 - Type **JavaScript module**
 
 **Keep the `?v=` and bump it on every update.** Home Assistant serves `/local/`
@@ -315,18 +315,18 @@ loaded the card once will not go back for a new one, no matter what you copy ove
 the file on disk. Changing the query string is what actually invalidates it; a
 normal reload will not.
 
-The console should log `NIBEPI-FLOW-CARD v3.5.0` on load. If it reports an older
+The console should log `NIBEPI-FLOW-CARD v3.5.1` on load. If it reports an older
 version, the browser is serving a cached copy and nothing else you change will
 have any effect. Two ways to check what is really running:
 
 ```js
-customElements.get('nibepi-flow-card').version     // -> "3.5.0"
+customElements.get('nibepi-flow-card').version     // -> "3.5.1"
 ```
 
 and the card logs its own layout decision whenever it changes:
 
 ```
-NIBEPI-FLOW-CARD v3.5.0: card 1532px -> landscape (layout: auto, wide_at: 900)
+NIBEPI-FLOW-CARD v3.5.1: card 1532px -> landscape (layout: auto, wide_at: 900)
 ```
 
 That line distinguishes the two reasons the schematic can come out portrait — a
