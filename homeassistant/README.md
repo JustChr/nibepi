@@ -6,7 +6,7 @@ energy meters the Energy dashboard accepts.
 
 | File | What it is |
 |---|---|
-| `nibepi-card.js` | Custom Lovelace card: live hydraulic schematic, summary, heat demand meter and grouped detail rows |
+| `nibepi-card.js` | Custom Lovelace cards: live hydraulic schematic, summary, heat demand meter and grouped detail rows (`nibepi-flow-card`); heating curve diagram with set point inputs (`nibepi-curve-card`) |
 | `packages/nibepi.yaml` | Derived sensors — heat output, electrical input, COP, alarm text, energy meters, alarm reset |
 | `dashboard.yaml` | The dashboard itself: Übersicht · Verlauf · Warmwasser · Diagnose |
 | `gen-alarms.js` | Regenerates the 265-code alarm tables in the two files above from `lib/alarms.json` |
@@ -221,6 +221,65 @@ buttons and the boost pill out of the drawing and leaves the card read-only.
 Set `language: de` or `language: en`; the card ships with both label sets,
 including `Prio`, compressor state and every detail row label.
 
+### The heating curve card
+
+`nibepi-curve-card` ships in the same file and draws what the three heating
+settings actually do: the supply temperature the pump aims for at every outdoor
+temperature from +20 to −25 °C.
+
+```yaml
+- type: custom:nibepi-curve-card
+  language: de
+  entities:
+    outdoor_avg: sensor.nibe_heat_pump_nibe_bt1_average        # the curve runs on the BT1 average
+    supply_calc: sensor.nibe_heat_pump_nibe_calc_supply_s1      # 43009, anchors the line
+    supply: sensor.nibe_heat_pump_nibe_bt2_supply_temp_s1       # optional, actual supply dot
+    curve: number.nibe_heat_pump_nibe_heat_curve_s1             # 47007
+    curve_offset: number.nibe_heat_pump_nibe_heat_offset_s1     # 47011
+    room_set: number.nibe_heat_pump_nibe_room_sensor_setpoint_s1  # 47398
+    use_room_sensor: switch.nibe_heat_pump_nibe_use_room_sensor_s1  # 47394
+    min_supply: number.nibe_heat_pump_nibe_min_supply_system_1  # 47015, optional
+    max_supply: number.nibe_heat_pump_nibe_max_supply_system_1  # 47019, optional
+    room_factor: number.nibe_heat_pump_nibe_room_sensor_factor_s1  # 47402, optional
+```
+
+**How the pump computes its supply target.** NIBE does not publish a formula;
+the curves exist only as a picture on the display. What the manual does say,
+plus a reading of that picture, gives this model:
+
+```
+slope(curve) ≈ (S − 20) / 50,   S = 30 + (curve − 1) · 40/14   (supply at −30 °C: 30 … 70 °C)
+ref          = 20 °C, or the room target when the room sensor is on
+supply       = ref + slope · (ref − T_outdoor_avg)
+             + 2.5 °C · offset                       ("+2 steps → +5 °C at all outdoor temperatures")
+             + room_factor · (room target − room)    (room sensor on only)
+             clamped to [min supply, max supply]
+```
+
+So yes, the inside temperature enters — but only with the room sensor on, and
+then twice: the target moves the whole curve, and the error between target and
+measured room adds `factor × error` on top. With the sensor off the pump never
+looks at the room.
+
+The slope numbers are approximate and a few degrees out on a real pump, so the
+card does not trust the model's absolute height. It draws the model's **shape**
+shifted to pass through the supply the pump **calculates right now** (43009) at
+the current outdoor average. Changing a setting in the card draws a dashed
+preview of the model's *difference* on top of that. When the calculated supply
+sits on a min/max clamp it says nothing about the curve's height, so the card
+falls back to the unanchored model and says so under the diagram. Curve 0 (the
+pump's own curve) is not drawn.
+
+**Set points, not sliders.** A NibePi write lands on the next poll and is only
+confirmed when the register is read back, often a minute or more later. So
+`−` / `+` (or typing a value, or the arrow keys) only edit a draft, shown in
+orange as *not sent yet*. Nothing is written until **Apply**, which sends all
+changed values at once. Each sent row then reads *sent · waiting for the pump*
+with a running clock. It turns *confirmed* when the entity reports the new
+value, and red after three minutes without a read-back. Unlike the flow card's
+stepper there is no 15 second optimistic window: the row keeps the sent value
+until the pump has actually taken it.
+
 ### Degree minutes, as heat the house is short of
 
 Degree minutes are the pump's own integral of how far the supply temperature sits
@@ -255,6 +314,8 @@ marked **required** are the ones without which whole cards stay empty.
 | 47007 | Heat Curve S1 | Curve selection |
 | 47011 | Heat Offset S1 | The real "make it warmer" knob |
 | 47394 | Use room sensor S1 | Room sensor on/off |
+| 47015 / 47019 | Min / Max Supply System 1 | Optional: the clamps drawn on the heating curve card |
+| 47402 | Room sensor factor S1 | Optional: lets the curve card preview the room-error part of a room target change |
 | 43091 | Int. el.add. State | Active immersion heater steps |
 | 43420 / 43424 | Compressor run hours, total / hot water | Runtime accounting |
 | 43081 / 43239 | Additional heat run hours, total / hot water | Runtime accounting |
@@ -306,7 +367,7 @@ cp nibepi-card.js /config/www/nibepi-card.js
 
 Register it under **Settings → Dashboards → ⋮ → Resources → Add resource**:
 
-- URL `/local/nibepi-card.js?v=3.5.1`
+- URL `/local/nibepi-card.js?v=3.6.0`
 - Type **JavaScript module**
 
 **Keep the `?v=` and bump it on every update.** Home Assistant serves `/local/`
@@ -315,18 +376,18 @@ loaded the card once will not go back for a new one, no matter what you copy ove
 the file on disk. Changing the query string is what actually invalidates it; a
 normal reload will not.
 
-The console should log `NIBEPI-FLOW-CARD v3.5.1` on load. If it reports an older
+The console should log `NIBEPI-FLOW-CARD v3.6.0` on load. If it reports an older
 version, the browser is serving a cached copy and nothing else you change will
 have any effect. Two ways to check what is really running:
 
 ```js
-customElements.get('nibepi-flow-card').version     // -> "3.5.1"
+customElements.get('nibepi-flow-card').version     // -> "3.6.0"
 ```
 
 and the card logs its own layout decision whenever it changes:
 
 ```
-NIBEPI-FLOW-CARD v3.5.1: card 1532px -> landscape (layout: auto, wide_at: 900)
+NIBEPI-FLOW-CARD v3.6.0: card 1532px -> landscape (layout: auto, wide_at: 900)
 ```
 
 That line distinguishes the two reasons the schematic can come out portrait — a

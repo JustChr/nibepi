@@ -155,32 +155,27 @@ views:
             heading_style: title
             icon: mdi:radiator
 
-          - type: tile
-            entity: number.nibe_heat_pump_nibe_room_sensor_setpoint_s1
-            name: Raumtemperatur Soll
-            icon: mdi:home-thermometer
-            features_position: bottom
-            features:
-              - type: numeric-input
-                style: slider
-
-          - type: tile
-            entity: number.nibe_heat_pump_nibe_heat_offset_s1
-            name: Heizkurve Offset
-            icon: mdi:tune-variant
-            features_position: bottom
-            features:
-              - type: numeric-input
-                style: slider
-
-          - type: tile
-            entity: number.nibe_heat_pump_nibe_heat_curve_s1
-            name: Heizkurve
-            icon: mdi:chart-bell-curve-cumulative
-            features_position: bottom
-            features:
-              - type: numeric-input
-                style: box
+          # The curve drawn against outdoor temperature, with curve, offset and
+          # room target as set points: edits stay a draft until Übernehmen, and
+          # a sent value is marked as waiting until NibePi reads it back.
+          # min_supply / max_supply (47015 / 47019) draw the clamps; room_factor
+          # (47402) puts the room error term into a room target preview. All
+          # three are optional registers — leave the keys out if not enabled.
+          - type: custom:nibepi-curve-card
+            grid_options:
+              columns: full
+            language: de
+            entities:
+              outdoor_avg: sensor.nibe_heat_pump_nibe_bt1_average
+              supply_calc: sensor.nibe_heat_pump_nibe_calc_supply_s1
+              supply: sensor.nibe_heat_pump_nibe_bt2_supply_temp_s1
+              curve: number.nibe_heat_pump_nibe_heat_curve_s1
+              curve_offset: number.nibe_heat_pump_nibe_heat_offset_s1
+              room_set: number.nibe_heat_pump_nibe_room_sensor_setpoint_s1
+              use_room_sensor: switch.nibe_heat_pump_nibe_use_room_sensor_s1
+              min_supply: number.nibe_heat_pump_nibe_min_supply_system_1
+              max_supply: number.nibe_heat_pump_nibe_max_supply_system_1
+              room_factor: number.nibe_heat_pump_nibe_room_sensor_factor_s1
 
           - type: tile
             entity: sensor.nibe_heat_pump_nibe_calc_supply_s1

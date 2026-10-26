@@ -31,7 +31,7 @@
  *     node homeassistant/gen-alarms.js
  */
 
-const CARD_VERSION = '3.5.1';
+const CARD_VERSION = '3.6.0';
 
 // Card content width, in px, at which the landscape sheet takes over. The
 // landscape drawing is 1040 units wide, so below this it renders at under ~0.87×
@@ -1524,8 +1524,519 @@ class NibepiFlowCard extends HTMLElement {
     }
 }
 
+// ═════════════════════════════════════════════════════════════════════════════
+//  nibepi-curve-card — the heating curve, drawn, with set point inputs
+// ═════════════════════════════════════════════════════════════════════════════
+/*
+ * The pump turns the outdoor temperature (the BT1 average) into a supply target,
+ * and that target is what the house actually gets. Four registers shape it:
+ *   47007 curve        the slope — how much warmer the supply per degree colder
+ *   47011 offset       a parallel shift of the whole curve
+ *   47398 room target  with the room sensor on, the point the curve pivots on;
+ *   47402 room factor  plus factor × (target − room) on top
+ * and 47015 / 47019, min and max supply, flatten it at both ends.
+ *
+ * NIBE publishes the curves only as a picture on the pump's display. The manual
+ * gives two numbers: one offset step is about 2.5 °C of supply ("+2 steps
+ * increases the supply temperature by 5 °C at all outdoor temperatures"), and
+ * min/max clamp the result. The slope per curve number is read off that picture
+ * (as described in greberg/nibepi-ha): near-straight lines that all pass close
+ * to 20 °C supply at +20 °C outside and, at −30 °C, span roughly 30 °C for
+ * curve 1 to 70 °C for curve 15. On a real pump that is a few degrees out, so
+ * the card does not trust its absolute height: the line is shifted to pass
+ * through the supply the pump calculates right now (43009), and only the shape,
+ * and the change a draft would make, come from the model.
+ *
+ * The inputs are set points, not sliders. − / + or typing edit a draft and
+ * nothing is written until Apply. A write goes out on NibePi's next poll and is
+ * only confirmed when the register is read back, which can take a minute or
+ * more — so a sent value stays marked as waiting until the entity really
+ * reports it, instead of snapping back or pretending it landed.
+ */
+const CURVE_PIVOT = 20;
+const CURVE_SPAN = [30, 70];          // supply at −30 °C outside for curve 1 and curve 15
+const OFFSET_STEP = 2.5;
+const CURVE_X = [20, -25];            // outdoor axis, warm on the left as on the pump
+const CONFIRM_SLOW_MS = 180000;
+const CONFIRM_SHOW_MS = 6000;
+
+const CURVE_LABELS = {
+    en: {
+        title: 'Heating curve', curve: 'Curve', curve_offset: 'Offset', room_set: 'Room target',
+        hCurve: 'Slope: how much warmer the supply gets per degree colder outside',
+        hOffset: 'Shifts the whole curve, about 2.5 °C supply per step',
+        hRoom: 'Room sensor on: the curve pivots on this, and the room error is added',
+        apply: 'Apply', discard: 'Discard', draft: 'not sent yet',
+        waiting: 'sent · waiting for the pump {t}', slow: 'not read back after {t} — check NibePi',
+        ok: 'confirmed by the pump',
+        outdoor: 'Outside °C', supply: 'Supply °C', now: 'now',
+        lCur: 'Curve now', lDraft: 'With your changes', lCalc: 'Calculated supply', lSupply: 'Actual supply',
+        lClamp: 'Min / max supply',
+        own: 'Curve 0 is the pump\'s own curve (menu 1.9.7); it is not drawn here.',
+        missing: 'The curve and offset entities are needed to draw the curve.',
+        note: 'Shape: NIBE\'s curve family, approximated. Height: placed through the supply the pump calculates now.',
+        noteFree: 'Shape and height both approximated — no calculated supply to anchor on.',
+    },
+    de: {
+        title: 'Heizkurve', curve: 'Kurve', curve_offset: 'Offset', room_set: 'Raum Soll',
+        hCurve: 'Steigung: wie viel wärmer der Vorlauf pro Grad kälter draußen wird',
+        hOffset: 'Verschiebt die ganze Kurve, etwa 2,5 °C Vorlauf pro Stufe',
+        hRoom: 'Raumfühler an: die Kurve dreht um diesen Wert, die Raumabweichung kommt dazu',
+        apply: 'Übernehmen', discard: 'Verwerfen', draft: 'noch nicht gesendet',
+        waiting: 'gesendet · wartet auf die Pumpe {t}', slow: 'nach {t} nicht bestätigt — NibePi prüfen',
+        ok: 'von der Pumpe bestätigt',
+        outdoor: 'Außen °C', supply: 'Vorlauf °C', now: 'jetzt',
+        lCur: 'Kurve jetzt', lDraft: 'Mit Änderungen', lCalc: 'Berechneter Vorlauf', lSupply: 'Vorlauf ist',
+        lClamp: 'Vorlauf min / max',
+        own: 'Kurve 0 ist die eigene Kurve der Pumpe (Menü 1.9.7) und wird hier nicht gezeichnet.',
+        missing: 'Für die Kurve werden die Entitäten für Kurve und Offset gebraucht.',
+        note: 'Form: NIBE-Kurvenschar, angenähert. Höhe: durch den Vorlauf gelegt, den die Pumpe gerade berechnet.',
+        noteFree: 'Form und Höhe angenähert — kein berechneter Vorlauf zum Ausrichten.',
+    },
+};
+
+/** Supply for one setting, unclamped and without the room error term. With the
+ *  room sensor on, the target replaces 20 °C as the point the curve pivots on —
+ *  raising it shifts the curve by (1 + slope) per degree, as a warmer house
+ *  needs both a warmer floor and more heat through the walls. */
+function curveSlope(curve) {
+    const at = CURVE_SPAN[0] + (curve - 1) * (CURVE_SPAN[1] - CURVE_SPAN[0]) / 14;
+    return (at - CURVE_PIVOT) / (CURVE_PIVOT + 30);
+}
+
+function curveModel(tOut, s) {
+    const k = curveSlope(s.curve);
+    const ref = s.room === null ? CURVE_PIVOT : s.room;
+    return ref + k * (ref - tOut) + OFFSET_STEP * s.offset;
+}
+
+const CURVE_KEYS = ['curve', 'curve_offset', 'room_set'];
+
+class NibepiCurveCard extends HTMLElement {
+    constructor() {
+        super();
+        this.attachShadow({ mode: 'open' });
+        this._built = false;
+        this._sig = null;
+        this._draft = {};       // edited, not sent
+        this._wait = {};        // sent, not yet read back: { v, t }
+        this._ok = {};          // read back: time of confirmation
+        this._timer = null;
+    }
+
+    static getStubConfig() {
+        return {
+            type: 'custom:nibepi-curve-card',
+            language: 'en',
+            entities: {
+                outdoor_avg: 'sensor.nibe_heat_pump_nibe_bt1_average',
+                supply_calc: 'sensor.nibe_heat_pump_nibe_calc_supply_s1',
+                curve: 'number.nibe_heat_pump_nibe_heat_curve_s1',
+                curve_offset: 'number.nibe_heat_pump_nibe_heat_offset_s1',
+            },
+        };
+    }
+
+    setConfig(config) {
+        if (!config || !config.entities || typeof config.entities !== 'object') {
+            throw new Error('nibepi-curve-card: an "entities" map is required');
+        }
+        this._cfg = Object.assign({ language: 'en', title: '' }, config);
+        this._e = config.entities;
+        this._t = CURVE_LABELS[this._cfg.language] || CURVE_LABELS.en;
+        this._built = false;
+        this._sig = null;
+        this._draft = {};
+        this._wait = {};
+        this._ok = {};
+        if (this.shadowRoot) this.shadowRoot.innerHTML = '';
+    }
+
+    set hass(hass) {
+        this._hass = hass;
+        if (!this._built) this._build();
+        this._update();
+    }
+
+    getCardSize() { return 8; }
+
+    static get version() { return CARD_VERSION; }
+
+    disconnectedCallback() { this._tick(false); }
+
+    // ── data ─────────────────────────────────────────────────────────────────
+    _obj(key) {
+        const id = this._e[key];
+        if (!id || !this._hass) return null;
+        const s = this._hass.states[id];
+        if (!s || s.state === 'unavailable' || s.state === 'unknown') return null;
+        return s;
+    }
+
+    _num(key) {
+        const s = this._obj(key);
+        if (!s) return null;
+        const v = parseFloat(s.state);
+        return Number.isNaN(v) ? null : v;
+    }
+
+    /** The room target only steers the pump while the room sensor is on. */
+    _roomOn() {
+        const sw = this._obj('use_room_sensor');
+        return !!this._obj('room_set') && (!sw || sw.state !== 'off');
+    }
+
+    _keys() { return CURVE_KEYS.filter(k => (k === 'room_set' ? this._roomOn() : !!this._obj(k))); }
+
+    /** Step and limits from the entity's own attributes. */
+    _range(key) {
+        const a = (this._obj(key) || {}).attributes || {};
+        const def = key === 'room_set' ? 0.5 : 1;
+        return {
+            step: Number(a.step) || def,
+            lo: a.min === undefined ? -Infinity : Number(a.min),
+            hi: a.max === undefined ? Infinity : Number(a.max),
+        };
+    }
+
+    /** What the row shows: the draft, else the value in flight, else the pump's. */
+    _shown(key) {
+        if (key in this._draft) return this._draft[key];
+        if (this._wait[key]) return this._wait[key].v;
+        return this._num(key);
+    }
+
+    /** Settle writes against what the pump reports. Called on every update. */
+    _settle() {
+        const now = Date.now();
+        for (const [k, w] of Object.entries(this._wait)) {
+            const live = this._num(k);
+            if (live !== null && Math.abs(live - w.v) < 1e-6) {
+                delete this._wait[k];
+                this._ok[k] = now;
+            }
+        }
+        for (const [k, t] of Object.entries(this._ok)) {
+            if (now - t > CONFIRM_SHOW_MS) delete this._ok[k];
+        }
+        for (const [k, v] of Object.entries(this._draft)) {
+            // a draft back at the live value is no draft at all
+            if (!this._wait[k] && this._num(k) !== null && Math.abs(this._num(k) - v) < 1e-6) {
+                delete this._draft[k];
+            }
+        }
+        this._tick(Object.keys(this._wait).length > 0 || Object.keys(this._ok).length > 0);
+    }
+
+    /** A one-second clock while anything is in flight, for the elapsed time. */
+    _tick(on) {
+        if (on && !this._timer) {
+            this._timer = setInterval(() => { this._sig = null; this._update(); }, 1000);
+        } else if (!on && this._timer) {
+            clearInterval(this._timer);
+            this._timer = null;
+        }
+    }
+
+    _setting(src) {
+        const curve = src('curve'), offset = src('curve_offset');
+        if (curve === null || offset === null) return null;
+        return { curve, offset, room: this._roomOn() ? src('room_set') : null };
+    }
+
+    // ── input ────────────────────────────────────────────────────────────────
+    _edit(key, value) {
+        const r = this._range(key);
+        if (value === null || Number.isNaN(value)) return;
+        const v = Number(clamp(Math.round(value / r.step) * r.step, r.lo, r.hi).toFixed(3));
+        const base = this._wait[key] ? this._wait[key].v : this._num(key);
+        if (base !== null && Math.abs(base - v) < 1e-6) delete this._draft[key];
+        else this._draft[key] = v;
+        this._sig = null;
+        this._update();
+    }
+
+    _nudge(key, dir) {
+        const cur = this._shown(key);
+        if (cur === null) return;
+        this._edit(key, cur + dir * this._range(key).step);
+    }
+
+    _apply() {
+        if (!this._hass || !this._hass.callService) return;
+        const now = Date.now();
+        for (const [k, v] of Object.entries(this._draft)) {
+            this._hass.callService('number', 'set_value', { entity_id: this._e[k], value: v });
+            this._wait[k] = { v, t: now };
+            delete this._ok[k];
+        }
+        this._draft = {};
+        this._sig = null;
+        this._update();
+    }
+
+    _discard() {
+        this._draft = {};
+        this._sig = null;
+        this._update();
+    }
+
+    // ── markup ───────────────────────────────────────────────────────────────
+    _build() {
+        const t = this._t;
+        const hint = { curve: t.hCurve, curve_offset: t.hOffset, room_set: t.hRoom };
+        const row = k => `
+      <div class="row" id="r_${k}">
+        <div class="lbl"><span>${t[k]}</span><small>${hint[k]}</small></div>
+        <div class="step">
+          <button type="button" id="dn_${k}" aria-label="−">−</button>
+          <input id="v_${k}" inputmode="decimal" autocomplete="off" aria-label="${esc(t[k])}">
+          <button type="button" id="up_${k}" aria-label="+">+</button>
+        </div>
+        <div class="st" id="s_${k}"></div>
+      </div>`;
+
+        this.shadowRoot.innerHTML = `
+      <style>
+        :host { display:block; }
+        ha-card { display:block; padding:16px; }
+        .title { font-size:1.05rem; font-weight:500; color:var(--primary-text-color); margin-bottom:8px; }
+        svg { display:block; width:100%; max-width:640px; height:auto; margin:0 auto; }
+        .grid { stroke:var(--divider-color); stroke-width:1; }
+        .zero { stroke:var(--secondary-text-color); stroke-width:1; opacity:.5; }
+        .tick { fill:var(--secondary-text-color); font-size:10px; font-variant-numeric:tabular-nums; }
+        .axis { fill:var(--secondary-text-color); font-size:9.5px; }
+        .cur { fill:none; stroke:var(--primary-color); stroke-width:2.4; stroke-linejoin:round; }
+        .drf { fill:none; stroke:var(--warning-color, #e07b39); stroke-width:2.2; stroke-dasharray:6 4; }
+        .clampl { stroke:var(--secondary-text-color); stroke-width:1; stroke-dasharray:2 3; opacity:.7; }
+        .nowl { stroke:var(--secondary-text-color); stroke-width:1; stroke-dasharray:3 3; }
+        .calc { fill:var(--primary-color); stroke:var(--card-background-color, #fff); stroke-width:1.5; }
+        .sup { fill:none; stroke:var(--primary-text-color); stroke-width:1.6; }
+        .legend { display:flex; flex-wrap:wrap; gap:4px 14px; justify-content:center;
+          font-size:.75rem; color:var(--secondary-text-color); margin:6px 0 2px; }
+        .legend span { display:inline-flex; align-items:center; gap:6px; }
+        .legend .hidden { display:none; }
+        .sw { width:18px; height:0; border-top:2.4px solid var(--primary-color); }
+        .sw.d { border-top:2.2px dashed var(--warning-color, #e07b39); }
+        .sw.c { border-top:1px dotted var(--secondary-text-color); }
+        .dot { width:9px; height:9px; border-radius:50%; background:var(--primary-color); }
+        .dot.r { background:none; border:1.6px solid var(--primary-text-color); box-sizing:border-box; }
+        .note { font-size:.72rem; color:var(--secondary-text-color); text-align:center; margin:2px 0 12px; }
+        .row { display:grid; grid-template-columns:1fr auto; gap:2px 12px; align-items:center;
+          padding:10px 0; border-top:1px solid var(--divider-color); }
+        .row.hidden { display:none; }
+        .lbl { display:flex; flex-direction:column; min-width:0; }
+        .lbl span { font-size:.95rem; color:var(--primary-text-color); }
+        .lbl small { font-size:.72rem; color:var(--secondary-text-color); line-height:1.3; }
+        .step { display:flex; align-items:center; gap:4px; }
+        .step button {
+          appearance:none; font:inherit; font-size:1.2rem; line-height:1; cursor:pointer;
+          width:36px; height:36px; border-radius:50%; border:none;
+          background:var(--secondary-background-color); color:var(--primary-text-color);
+        }
+        .step button:disabled { opacity:.35; cursor:default; }
+        .step input {
+          width:64px; height:34px; box-sizing:border-box; text-align:center; font:inherit;
+          font-size:1.1rem; font-variant-numeric:tabular-nums; color:var(--primary-text-color);
+          background:none; border:1px solid var(--divider-color); border-radius:8px;
+        }
+        .row.draft .step input { border-color:var(--warning-color, #e07b39);
+          color:var(--warning-color, #e07b39); font-weight:500; }
+        .row.wait .step input { border-style:dashed; }
+        .st { grid-column:1 / -1; font-size:.72rem; min-height:0; color:var(--secondary-text-color); }
+        .st:empty { display:none; }
+        .row.draft .st { color:var(--warning-color, #e07b39); }
+        .row.slow .st { color:var(--error-color, #d24c3c); }
+        .row.ok .st { color:var(--success-color, #43a047); }
+        .acts { display:flex; justify-content:flex-end; gap:8px; padding-top:10px;
+          border-top:1px solid var(--divider-color); }
+        .acts.hidden { display:none; }
+        .acts button { appearance:none; font:inherit; font-size:.85rem; font-weight:500; cursor:pointer;
+          padding:8px 16px; border-radius:18px; border:none; }
+        #discard { background:none; color:var(--secondary-text-color); }
+        #apply { background:var(--primary-color); color:var(--text-primary-color, #fff); }
+        .msg { font-size:.85rem; color:var(--secondary-text-color); padding:24px 0; text-align:center; }
+      </style>
+      <ha-card>
+        <div class="title">${esc(this._cfg.title || t.title)}</div>
+        <svg id="plot" viewBox="0 0 360 214" role="img" aria-label="${esc(t.title)}"></svg>
+        <div class="legend">
+          <span><i class="sw"></i>${t.lCur}</span>
+          <span id="lg_drf"><i class="sw d"></i>${t.lDraft}</span>
+          <span id="lg_calc"><i class="dot"></i>${t.lCalc}</span>
+          <span id="lg_sup"><i class="dot r"></i>${t.lSupply}</span>
+          <span id="lg_clamp"><i class="sw c"></i>${t.lClamp}</span>
+        </div>
+        <div class="note" id="note"></div>
+        ${CURVE_KEYS.map(row).join('')}
+        <div class="acts hidden" id="acts">
+          <button type="button" id="discard">${t.discard}</button>
+          <button type="button" id="apply">${t.apply}</button>
+        </div>
+      </ha-card>`;
+
+        const $ = id => this.shadowRoot.getElementById(id);
+        for (const k of CURVE_KEYS) {
+            $(`dn_${k}`).addEventListener('click', () => this._nudge(k, -1));
+            $(`up_${k}`).addEventListener('click', () => this._nudge(k, 1));
+            const inp = $(`v_${k}`);
+            inp.addEventListener('change', () => this._edit(k, parseFloat(inp.value.replace(',', '.'))));
+            inp.addEventListener('keydown', ev => {
+                if (ev.key === 'Enter') inp.blur();
+                else if (ev.key === 'ArrowUp' || ev.key === 'ArrowDown') {
+                    ev.preventDefault();
+                    this._nudge(k, ev.key === 'ArrowUp' ? 1 : -1);
+                }
+            });
+            inp.addEventListener('blur', () => { this._sig = null; this._update(); });
+        }
+        $('apply').addEventListener('click', () => this._apply());
+        $('discard').addEventListener('click', () => this._discard());
+        this._built = true;
+    }
+
+    // ── render ───────────────────────────────────────────────────────────────
+    _update() {
+        this._settle();
+        const sig = Object.keys(this._e).map(k => { const s = this._obj(k); return s ? s.state : ''; })
+            .join('|') + JSON.stringify([this._draft, this._wait, this._ok]);
+        if (sig === this._sig) return;
+        this._sig = sig;
+
+        const t = this._t, $ = id => this.shadowRoot.getElementById(id);
+        const keys = this._keys();
+        const focused = this.shadowRoot.activeElement;
+
+        for (const k of CURVE_KEYS) {
+            const on = keys.includes(k);
+            const r = $(`r_${k}`);
+            r.classList.toggle('hidden', !on);
+            if (!on) continue;
+            const v = this._shown(k), rg = this._range(k);
+            const digits = k === 'room_set' ? 1 : 0;
+            const inp = $(`v_${k}`);
+            if (focused !== inp) {
+                inp.value = v === null ? '–'
+                    : `${k === 'curve_offset' && v > 0 ? '+' : ''}${v.toFixed(digits)}`;
+            }
+            $(`dn_${k}`).disabled = v === null || v <= rg.lo;
+            $(`up_${k}`).disabled = v === null || v >= rg.hi;
+
+            const draft = k in this._draft, w = this._wait[k];
+            const slow = !draft && w && Date.now() - w.t > CONFIRM_SLOW_MS;
+            r.classList.toggle('draft', draft);
+            r.classList.toggle('wait', !draft && !!w);
+            r.classList.toggle('slow', !!slow);
+            r.classList.toggle('ok', !draft && !w && !!this._ok[k]);
+            let st = '';
+            if (draft) st = t.draft;
+            else if (w) st = (slow ? t.slow : t.waiting).replace('{t}', this._elapsed(w.t));
+            else if (this._ok[k]) st = t.ok;
+            $(`s_${k}`).textContent = st;
+        }
+        $('acts').classList.toggle('hidden', Object.keys(this._draft).length === 0);
+
+        this._plot();
+    }
+
+    _elapsed(t0) {
+        const s = Math.max(0, Math.round((Date.now() - t0) / 1000));
+        return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+    }
+
+    _plot() {
+        const t = this._t, $ = id => this.shadowRoot.getElementById(id);
+        const svg = $('plot');
+        const live = this._setting(k => this._num(k));
+        const show = (id, on) => $(id).classList.toggle('hidden', !on);
+
+        if (!live || live.curve === 0) {
+            svg.innerHTML = `<foreignObject x="0" y="0" width="360" height="214">
+              <div xmlns="http://www.w3.org/1999/xhtml" class="msg">${live ? t.own : t.missing}</div>
+            </foreignObject>`;
+            ['lg_drf', 'lg_calc', 'lg_sup', 'lg_clamp'].forEach(id => show(id, false));
+            $('note').textContent = '';
+            return;
+        }
+
+        const draft = this._setting(k => this._shown(k));
+        const changed = draft && CURVE_KEYS.some(k => this._shown(k) !== this._num(k));
+        const lo = this._num('min_supply'), hi = this._num('max_supply');
+        const lim = v => clamp(v, lo === null ? -Infinity : lo, hi === null ? Infinity : hi);
+
+        // Place the model through the pump's own calculation — unless that sits
+        // on a clamp, where it says nothing about the curve's height.
+        const tNow = this._num('outdoor_avg') ?? this._num('outdoor');
+        const calc = this._num('supply_calc');
+        const clamped = calc !== null && ((lo !== null && calc <= lo + 0.2) || (hi !== null && calc >= hi - 0.2));
+        const anchored = tNow !== null && calc !== null && !clamped;
+        const bias = anchored ? calc - curveModel(tNow, live) : 0;
+        // A changed room target also moves the room error term at once.
+        const factor = this._num('room_factor') ?? 0;
+        const dRoom = draft && draft.room !== null && live.room !== null ? factor * (draft.room - live.room) : 0;
+
+        const xs = [];
+        for (let x = CURVE_X[0]; x >= CURVE_X[1]; x -= 1) xs.push(x);
+        const curNow = xs.map(x => [x, lim(curveModel(x, live) + bias)]);
+        const curDrf = changed ? xs.map(x => [x, lim(curveModel(x, draft) + bias + dRoom)]) : null;
+
+        const ys = curNow.map(p => p[1]).concat(curDrf ? curDrf.map(p => p[1]) : []);
+        const sup = this._num('supply');
+        if (calc !== null) ys.push(calc);
+        if (sup !== null) ys.push(sup);
+        let y0 = Math.floor((Math.min(...ys) - 2) / 5) * 5;
+        let y1 = Math.ceil((Math.max(...ys) + 2) / 5) * 5;
+        if (y1 - y0 < 20) { const pad = (20 - (y1 - y0)) / 2; y0 -= Math.ceil(pad / 5) * 5; y1 = y0 + 20; }
+        const gStep = y1 - y0 > 40 ? 10 : 5;
+
+        const W = 360, H = 214, L = 30, R = 8, T = 8, B = 30;
+        const px = x => L + (CURVE_X[0] - x) / (CURVE_X[0] - CURVE_X[1]) * (W - L - R);
+        const py = y => T + (y1 - y) / (y1 - y0) * (H - T - B);
+        const path = pts => pts.map((p, i) => `${i ? 'L' : 'M'}${px(p[0]).toFixed(1)} ${py(p[1]).toFixed(1)}`).join('');
+
+        let g = '';
+        for (let y = y0; y <= y1; y += gStep) {
+            g += `<line class="grid" x1="${L}" x2="${W - R}" y1="${py(y)}" y2="${py(y)}"/>`
+                + `<text class="tick" x="${L - 5}" y="${py(y) + 3.5}" text-anchor="end">${y}</text>`;
+        }
+        for (let x = CURVE_X[0]; x >= CURVE_X[1]; x -= 5) {
+            g += `<line class="${x === 0 ? 'zero' : 'grid'}" x1="${px(x)}" x2="${px(x)}" y1="${T}" y2="${H - B}"/>`
+                + `<text class="tick" x="${px(x)}" y="${H - B + 13}" text-anchor="middle">${x}</text>`;
+        }
+        g += `<text class="axis" x="${W - R}" y="${H - 3}" text-anchor="end">${t.outdoor}</text>`
+            + `<text class="axis" x="${L + 4}" y="${T + 10}">${t.supply}</text>`;
+
+        const inside = v => v !== null && v > y0 && v < y1;
+        for (const v of [lo, hi]) {
+            if (inside(v)) g += `<line class="clampl" x1="${L}" x2="${W - R}" y1="${py(v)}" y2="${py(v)}"/>`;
+        }
+        if (tNow !== null && tNow <= CURVE_X[0] && tNow >= CURVE_X[1]) {
+            g += `<line class="nowl" x1="${px(tNow)}" x2="${px(tNow)}" y1="${T}" y2="${H - B}"/>`
+                + `<text class="axis" x="${px(tNow) + 4}" y="${H - B - 4}">${t.now} ${fmt(tNow)}</text>`;
+        }
+        g += `<path class="cur" d="${path(curNow)}"/>`;
+        if (curDrf) g += `<path class="drf" d="${path(curDrf)}"/>`;
+        if (tNow !== null && inside(sup)) {
+            g += `<circle class="sup" cx="${px(tNow)}" cy="${py(sup)}" r="5"><title>${t.lSupply} ${fmt(sup)} °C</title></circle>`;
+        }
+        if (tNow !== null && inside(calc)) {
+            g += `<circle class="calc" cx="${px(tNow)}" cy="${py(calc)}" r="4.5"><title>${t.lCalc} ${fmt(calc)} °C</title></circle>`;
+        }
+        svg.innerHTML = g;
+
+        show('lg_drf', !!curDrf);
+        show('lg_calc', inside(calc));
+        show('lg_sup', inside(sup));
+        show('lg_clamp', inside(lo) || inside(hi));
+        $('note').textContent = anchored ? t.note : t.noteFree;
+    }
+}
+
 if (!customElements.get('nibepi-flow-card')) {
     customElements.define('nibepi-flow-card', NibepiFlowCard);
+}
+if (!customElements.get('nibepi-curve-card')) {
+    customElements.define('nibepi-curve-card', NibepiCurveCard);
 }
 
 window.customCards = window.customCards || [];
@@ -1533,6 +2044,13 @@ window.customCards.push({
     type: 'nibepi-flow-card',
     name: 'NibePi Flow Card',
     description: 'Live schematic for a NIBE heat pump: borehole, machine, floor heating, hot water tank, house heat demand — plus house target and hot water controls.',
+    preview: false,
+    documentationURL: 'https://github.com/JustChr/nibepi',
+});
+window.customCards.push({
+    type: 'nibepi-curve-card',
+    name: 'NibePi Heating Curve',
+    description: 'The heating curve drawn against outdoor temperature, with curve, offset and room target as set points that are only sent on Apply.',
     preview: false,
     documentationURL: 'https://github.com/JustChr/nibepi',
 });
