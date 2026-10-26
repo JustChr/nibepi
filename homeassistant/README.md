@@ -321,7 +321,7 @@ marked **required** are the ones without which whole cards stay empty.
 | 43081 / 43239 | Additional heat run hours, total / hot water | Runtime accounting |
 | 44306 / 44308 | Heat meters, compressor only | Compressor-only energy split |
 | 40079 / 40081 / 40083 | BE1–BE3 current | Per-phase current — **only useful if the load monitor's current transformers are actually clamped on the incoming phases**. Without them these registers sit at 0.0 A forever; the shipped dashboard leaves them out |
-| 43064 / 43065 | Heat medium ΔT set point / actual | Flow diagnostics |
+| 43064 / 43065 | Heat medium ΔT set point / actual | Set point is a real target. 43065 is **not** supply − return: on an F1155 it stays within ±0.3 K, so the card and dashboard show `sensor.nibe_heat_medium_delta_t` (BT12 − BT3) as ΔT actual instead |
 | 44874 | State SG Ready | SG Ready state |
 | 47206 | DM start heating | Real compressor start threshold on the heat demand meter |
 | 40071 | BT25 Ext. Supply | Only if you have an external supply sensor |
@@ -439,6 +439,7 @@ this a one-place edit for the schematic.
 
 | Sensor | Formula | Caveat |
 |---|---|---|
+| `sensor.nibe_heat_medium_delta_t` | `supply − return` | Same sensors as the heat output below: BT12 − BT3, falling back to BT2 − BT3. Replaces register 43065 as "ΔT actual" |
 | `sensor.nibe_heat_output` | `flow[l/min] × ΔT[K] × 0.06977` | ΔT is **BT12 − BT3** where register 40017 is enabled, falling back to BT2 − BT3. Water on the heat medium side, so no glycol correction. Zero unless flow > 0.5 l/min and supply > return |
 | `sensor.nibe_electrical_input` | `43141 / 1000 + 43084` | Compressor inverter power plus immersion heater — measured, no estimates. **Excludes** the circulation pumps, the control board and inverter conversion losses. Register 43141 counts in units of **10 W**, not W — NibePi ≥ 1.4.6 scales it; before that it read a tenth of the truth and COP came out ten times too good |
 | `sensor.nibe_pump_power` | GP1 `7.6 + 52.4 × n^3.36`, GP2 `178 × n²` | **Modelled**, not metered — neither pump reports power, only commanded speed. Curves fitted on an F1155-12 with the compressor idle and each pump metered directly; four points each, residuals under 0.4 W. The exponents differ because the circuits do: cold glycol in a long ground loop runs laminar-to-transitional (square law, no offset), the heating circuit is turbulent (near-cubic on a 7.6 W electronics floor). **These constants are specific to one machine** — refit them for yours, or expect the pump term to be wrong by tens of percent. GP1 keeps its heating curve during hot water; the tank coil is more restrictive so the real draw is a little lower, worth under 0.1 % of input |

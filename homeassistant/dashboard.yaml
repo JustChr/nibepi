@@ -91,7 +91,7 @@ views:
               supply: sensor.nibe_heat_pump_nibe_bt2_supply_temp_s1
               return: sensor.nibe_heat_pump_nibe_eb100_ep14_bt3_return_temp
               supply_calc: sensor.nibe_heat_pump_nibe_calc_supply_s1
-              dt_actual: sensor.nibe_heat_pump_nibe_heat_medium_flow_dt_actual
+              dt_actual: sensor.nibe_heat_medium_delta_t
               dt_set: sensor.nibe_heat_pump_nibe_heat_medium_flow_dt_set_point
               flow: sensor.nibe_heat_pump_nibe_bf1_ep14_flow
               supply_pump: sensor.nibe_heat_pump_nibe_supply_pump_speed_ep14
@@ -1022,7 +1022,7 @@ views:
             name: Durchfluss
             icon: mdi:waves-arrow-right
           - type: tile
-            entity: sensor.nibe_heat_pump_nibe_heat_medium_flow_dt_actual
+            entity: sensor.nibe_heat_medium_delta_t
             name: ΔT ist
           - type: tile
             entity: sensor.nibe_heat_pump_nibe_heat_medium_flow_dt_set_point

@@ -56,6 +56,27 @@ template:
             0
           {% endif %}
 
+      # ── Heat medium ΔT (measured) ─────────────────────────────────────────
+      # Supply minus return, same sensors as the heat output above. Register
+      # 43065 ("Heat Medium Flow dT Actual") is not this: on an F1155 it sits
+      # within ±0.3 K for days, with brief dips at compressor starts, while
+      # BT12 − BT3 was 3.5 K at 20 Hz. It reads like a regulation deviation, so
+      # the card and dashboard show this sensor instead.
+      - name: Nibe Heat Medium Delta T
+        unique_id: nibe_heat_medium_delta_t
+        unit_of_measurement: K
+        state_class: measurement
+        icon: mdi:thermometer-lines
+        availability: >-
+          {{ has_value('sensor.nibe_heat_pump_nibe_eb100_ep14_bt3_return_temp')
+             and (has_value('sensor.nibe_heat_pump_nibe_eb100_ep14_bt12_condensor_out')
+                  or has_value('sensor.nibe_heat_pump_nibe_bt2_supply_temp_s1')) }}
+        state: >-
+          {% set sup = states('sensor.nibe_heat_pump_nibe_eb100_ep14_bt12_condensor_out')
+                       | float(states('sensor.nibe_heat_pump_nibe_bt2_supply_temp_s1') | float(0)) %}
+          {% set ret = states('sensor.nibe_heat_pump_nibe_eb100_ep14_bt3_return_temp') | float(0) %}
+          {{ (sup - ret) | round(1) }}
+
       # ── Electrical input (measured only) ──────────────────────────────────
       # Inverter power to the compressor plus whatever the immersion heater draws.
       # This is the measured pair and nothing else: register 43141 is the
